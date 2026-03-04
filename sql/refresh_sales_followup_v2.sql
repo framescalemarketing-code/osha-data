@@ -244,7 +244,40 @@ scored AS (
   WHERE ic.rn = 1
 )
 SELECT
-  *,
+  region_label AS region,
+  company_name AS account_name,
+  address AS site_address,
+  city AS site_city,
+  state AS site_state,
+  zip AS site_zip,
+  naics_code,
+  industry_segment,
+  owner_type_label AS ownership_type,
+  inspection_type_label AS inspection_type,
+  close_case_date AS latest_case_close_date,
+  days_since_close AS days_since_last_case_close,
+  recency_band AS recency_window,
+  latest_activity_nr AS latest_inspection_id,
+  inspection_count AS inspections_total,
+  inspections_90d AS inspections_last_90_days,
+  violation_count AS violations_total,
+  open_violation_count AS open_violations_total,
+  CASE WHEN open_violation_count > 0 THEN 'Yes' ELSE 'No' END AS has_open_violations,
+  ROUND(total_penalties, 2) AS penalties_total_usd,
+  violation_event_count AS violation_events_total,
+  last_violation_event_date,
+  related_activity_count AS related_activities_total,
+  complaint_activity_count AS complaint_related_activities,
+  CASE WHEN complaint_activity_count > 0 THEN 'Yes' ELSE 'No' END AS has_complaint_signal,
+  emphasis_code_count AS emphasis_codes_total,
+  injury_count AS injuries_total,
+  severe_injury_count AS severe_injuries_total,
+  fatality_case_count AS fatality_cases_total,
+  accident_case_count AS accident_cases_total,
+  last_accident_date,
+  company_latest_close_date AS company_latest_case_close_date,
+  company_latest_load_dt AS company_latest_load_timestamp,
+  followup_score,
   CASE
     WHEN followup_score >= 85 THEN 'Priority 1'
     WHEN followup_score >= 55 THEN 'Priority 2'
@@ -259,17 +292,21 @@ SELECT
     WHEN followup_score >= 85 THEN 'High'
     WHEN followup_score >= 55 THEN 'Medium'
     ELSE 'Low'
-  END AS eyewear_buy_likelihood,
+  END AS buying_likelihood,
   CASE
     WHEN followup_score >= 85 THEN 'RED'
     WHEN followup_score >= 55 THEN 'YELLOW'
     ELSE 'GREEN'
-  END AS score_band,
+  END AS urgency_band,
   CASE
     WHEN followup_score >= 85 THEN '#F97066'
     WHEN followup_score >= 55 THEN '#F6C344'
     ELSE '#5BB974'
-  END AS score_color
+  END AS urgency_color,
+  CASE
+    WHEN severe_injury_indicator THEN 'Yes'
+    ELSE 'No'
+  END AS severe_incident_signal
 FROM scored
 WHERE industry_segment IN (
   'Manufacturing & Production',
@@ -528,7 +565,40 @@ scored AS (
   WHERE ic.rn = 1
 )
 SELECT
-  *,
+  region_label AS region,
+  company_name AS account_name,
+  address AS site_address,
+  city AS site_city,
+  state AS site_state,
+  zip AS site_zip,
+  naics_code,
+  industry_segment,
+  owner_type_label AS ownership_type,
+  inspection_type_label AS inspection_type,
+  close_case_date AS latest_case_close_date,
+  days_since_close AS days_since_last_case_close,
+  recency_band AS recency_window,
+  latest_activity_nr AS latest_inspection_id,
+  inspection_count AS inspections_total,
+  inspections_90d AS inspections_last_90_days,
+  violation_count AS violations_total,
+  open_violation_count AS open_violations_total,
+  CASE WHEN open_violation_count > 0 THEN 'Yes' ELSE 'No' END AS has_open_violations,
+  ROUND(total_penalties, 2) AS penalties_total_usd,
+  violation_event_count AS violation_events_total,
+  last_violation_event_date,
+  related_activity_count AS related_activities_total,
+  complaint_activity_count AS complaint_related_activities,
+  CASE WHEN complaint_activity_count > 0 THEN 'Yes' ELSE 'No' END AS has_complaint_signal,
+  emphasis_code_count AS emphasis_codes_total,
+  injury_count AS injuries_total,
+  severe_injury_count AS severe_injuries_total,
+  fatality_case_count AS fatality_cases_total,
+  accident_case_count AS accident_cases_total,
+  last_accident_date,
+  company_latest_close_date AS company_latest_case_close_date,
+  company_latest_load_dt AS company_latest_load_timestamp,
+  followup_score,
   CASE
     WHEN followup_score >= 85 THEN 'Priority 1'
     WHEN followup_score >= 55 THEN 'Priority 2'
@@ -543,17 +613,21 @@ SELECT
     WHEN followup_score >= 85 THEN 'High'
     WHEN followup_score >= 55 THEN 'Medium'
     ELSE 'Low'
-  END AS eyewear_buy_likelihood,
+  END AS buying_likelihood,
   CASE
     WHEN followup_score >= 85 THEN 'RED'
     WHEN followup_score >= 55 THEN 'YELLOW'
     ELSE 'GREEN'
-  END AS score_band,
+  END AS urgency_band,
   CASE
     WHEN followup_score >= 85 THEN '#F97066'
     WHEN followup_score >= 55 THEN '#F6C344'
     ELSE '#5BB974'
-  END AS score_color
+  END AS urgency_color,
+  CASE
+    WHEN severe_injury_indicator THEN 'Yes'
+    ELSE 'No'
+  END AS severe_incident_signal
 FROM scored
 WHERE industry_segment IN (
   'Manufacturing & Production',
