@@ -10,11 +10,13 @@
 const OSHA_SHEET_FORMAT_CONFIG = {
   headerRow: 1,
 
-  // Source Connected Sheets tabs.
+  // Optional explicit source Connected Sheets tabs.
+  // If empty, script auto-discovers datasource tabs containing sourceDataSheetNameContains.
   sourceDataSheetNames: [
     "v_sales_followup_bayarea_v2",
     "v_sales_followup_sandiego_v2",
   ],
+  sourceDataSheetNameContains: "v_sales_followup_",
 
   // source tab -> styled mirror tab
   mirrorTabBySource: {
@@ -88,10 +90,61 @@ function removeFormattingTriggers() {
 }
 
 function createOrRefreshStyledMirrors_(ss) {
-  OSHA_SHEET_FORMAT_CONFIG.sourceDataSheetNames.forEach((sourceName) => {
-    const preferredMirror = OSHA_SHEET_FORMAT_CONFIG.mirrorTabBySource[sourceName] || (sourceName + " (Styled)");
+  const sourceNames = resolveSourceDataSheetNames_(ss);
+  sourceNames.forEach((sourceName) => {
+    const preferredMirror = preferredMirrorNameForSource_(sourceName);
     ensureMirrorSheet_(ss, sourceName, preferredMirror);
   });
+}
+
+function resolveSourceDataSheetNames_(ss) {
+  const names = {};
+
+  OSHA_SHEET_FORMAT_CONFIG.sourceDataSheetNames.forEach((name) => {
+    const normalized = name && String(name).trim();
+    if (!normalized) {
+      return;
+    }
+    const sheet = ss.getSheetByName(normalized);
+    if (sheet && isDataSourceSheet_(sheet)) {
+      names[normalized] = true;
+    }
+  });
+
+  const marker = String(OSHA_SHEET_FORMAT_CONFIG.sourceDataSheetNameContains || "")
+    .trim()
+    .toLowerCase();
+  if (marker) {
+    ss.getSheets().forEach((sheet) => {
+      if (!isDataSourceSheet_(sheet)) {
+        return;
+      }
+      const name = sheet.getName();
+      if (name.toLowerCase().indexOf(marker) >= 0) {
+        names[name] = true;
+      }
+    });
+  }
+
+  return Object.keys(names);
+}
+
+function preferredMirrorNameForSource_(sourceName) {
+  if (OSHA_SHEET_FORMAT_CONFIG.mirrorTabBySource[sourceName]) {
+    return OSHA_SHEET_FORMAT_CONFIG.mirrorTabBySource[sourceName];
+  }
+
+  const n = sourceName.toLowerCase();
+  if (n.indexOf("bay") >= 0) {
+    return "Bay Area";
+  }
+  if (n.indexOf("sandiego") >= 0 || n.indexOf("san_diego") >= 0) {
+    return "San Diego";
+  }
+  if (n.indexOf("socal") >= 0) {
+    return "SoCal";
+  }
+  return sourceName + " (Styled)";
 }
 
 function ensureMirrorSheet_(ss, sourceName, preferredMirrorName) {
