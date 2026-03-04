@@ -112,6 +112,11 @@ It supports:
 - `API_MAX_REQUESTS_PER_RUN`
 - `API_USER_AGENT`
 
+### Optional GitHub repository variables
+
+- `ACCIDENT_API_LIMIT` (default `1000`)
+- `ACCIDENT_API_MAX_PAGES` (default `1`)
+
 If required secrets/variables are missing, the workflow fails before running the pull.
 
 ## Windows scheduler setup

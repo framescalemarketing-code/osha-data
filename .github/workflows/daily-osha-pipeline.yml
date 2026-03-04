@@ -37,6 +37,8 @@ jobs:
       SINCE_DATE: ${{ github.event.inputs.since_date }}
       API_LIMIT: ${{ github.event.inputs.api_limit }}
       API_MAX_PAGES: ${{ github.event.inputs.api_max_pages }}
+      ACCIDENT_API_LIMIT: ${{ vars.ACCIDENT_API_LIMIT }}
+      ACCIDENT_API_MAX_PAGES: ${{ vars.ACCIDENT_API_MAX_PAGES }}
       API_MIN_INTERVAL_SECONDS: ${{ vars.API_MIN_INTERVAL_SECONDS }}
       API_TIMEOUT_SECONDS: ${{ vars.API_TIMEOUT_SECONDS }}
       API_MAX_RETRIES: ${{ vars.API_MAX_RETRIES }}

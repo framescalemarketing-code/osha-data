@@ -23,6 +23,15 @@ ENDPOINT_SCHEMAS = {
 }
 
 
+def _schema_columns(schema: str) -> list[str]:
+    columns: list[str] = []
+    for token in schema.split(","):
+        name = token.split(":", 1)[0].strip()
+        if name:
+            columns.append(name)
+    return columns
+
+
 @dataclass(frozen=True)
 class IngestResult:
     rows_pulled: int
@@ -90,30 +99,67 @@ def run_inspection_ingest(
 
 def run_enrichment_ingest(*, config: PipelineConfig, client: DolApiClient) -> None:
     endpoint_plan = [
-        ("violation", "violation_recent.csv", "violation_recent"),
-        ("violation_event", "violation_event_recent.csv", "violation_event_recent"),
-        ("related_activity", "related_activity_recent.csv", "related_activity_recent"),
-        ("emphasis_codes", "emphasis_codes_recent.csv", "emphasis_codes_recent"),
-        ("accident_injury", "accident_injury_recent.csv", "accident_injury_recent"),
-        ("accident", "accident_recent.csv", "accident_recent"),
+        ("violation", "violation_recent.csv", "violation_recent", config.api_limit, config.api_max_pages),
+        (
+            "violation_event",
+            "violation_event_recent.csv",
+            "violation_event_recent",
+            config.api_limit,
+            config.api_max_pages,
+        ),
+        (
+            "related_activity",
+            "related_activity_recent.csv",
+            "related_activity_recent",
+            config.api_limit,
+            config.api_max_pages,
+        ),
+        (
+            "emphasis_codes",
+            "emphasis_codes_recent.csv",
+            "emphasis_codes_recent",
+            config.api_limit,
+            config.api_max_pages,
+        ),
+        (
+            "accident_injury",
+            "accident_injury_recent.csv",
+            "accident_injury_recent",
+            config.api_limit,
+            config.api_max_pages,
+        ),
+        (
+            "accident",
+            "accident_recent.csv",
+            "accident_recent",
+            config.accident_api_limit,
+            config.accident_api_max_pages,
+        ),
     ]
 
     extraction_results: dict[str, bool] = {}
     filter_object = {"field": "load_dt", "operator": "gt", "value": config.since_date}
 
-    for endpoint, csv_name, _table in endpoint_plan:
+    for endpoint, csv_name, _table, limit, max_pages in endpoint_plan:
         out_csv = config.paths.data_dir / csv_name
         try:
+            if endpoint == "accident":
+                logging.info(
+                    "[accident] using conservative settings limit=%s max_pages=%s",
+                    limit,
+                    max_pages,
+                )
             query_endpoint_to_csv(
                 client=client,
                 endpoint=endpoint,
                 out_csv=out_csv,
-                limit=config.api_limit,
-                max_pages=config.api_max_pages,
+                limit=limit,
+                max_pages=max_pages,
                 sort="desc",
                 sort_by="load_dt",
                 filter_object=filter_object,
                 append=False,
+                columns_override=_schema_columns(ENDPOINT_SCHEMAS[endpoint]),
             )
             extraction_results[endpoint] = True
         except Exception as exc:
@@ -125,7 +171,7 @@ def run_enrichment_ingest(*, config: PipelineConfig, client: DolApiClient) -> No
         ", ".join(f"{name}={ok}" for name, ok in extraction_results.items()),
     )
 
-    for endpoint, csv_name, table_name in endpoint_plan:
+    for endpoint, csv_name, table_name, _limit, _max_pages in endpoint_plan:
         csv_path = config.paths.data_dir / csv_name
         row_count = csv_data_row_count(csv_path)
         if row_count <= 0:
@@ -181,4 +227,3 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
 
     elapsed = time.perf_counter() - start
     logging.info("OSHA full pipeline finished in %.1fs.", elapsed)
-

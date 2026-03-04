@@ -176,8 +176,9 @@ def query_endpoint_to_csv(
     sort_by: str = "load_dt",
     filter_object: dict[str, Any] | None = None,
     append: bool = False,
+    columns_override: list[str] | None = None,
 ) -> int:
-    columns = client.get_metadata_columns(endpoint)
+    columns = list(columns_override) if columns_override else client.get_metadata_columns(endpoint)
     if not append and out_csv.exists():
         out_csv.unlink()
 
@@ -202,4 +203,3 @@ def query_endpoint_to_csv(
 
     logging.info("[%s] extraction complete rows=%s path=%s", endpoint, total_rows, out_csv)
     return total_rows
-

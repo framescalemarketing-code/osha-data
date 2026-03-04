@@ -88,6 +88,8 @@ class PipelineConfig:
     since_date: str
     api_limit: int
     api_max_pages: int
+    accident_api_limit: int
+    accident_api_max_pages: int
     paths: RuntimePaths
     api_safety: ApiSafetyConfig
     compliance: ComplianceConfig
@@ -103,6 +105,13 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
     since_date = env_value("SINCE_DATE", dotenv_values, default_since_date())
     api_limit = _parse_int(env_value("API_LIMIT", dotenv_values, "5000"), 5000)
     api_max_pages = _parse_int(env_value("API_MAX_PAGES", dotenv_values, "2"), 2)
+    accident_api_limit = _parse_int(
+        env_value("ACCIDENT_API_LIMIT", dotenv_values, str(min(api_limit, 1000))),
+        min(api_limit, 1000),
+    )
+    accident_api_max_pages = _parse_int(
+        env_value("ACCIDENT_API_MAX_PAGES", dotenv_values, "1"), 1
+    )
 
     data_dir = repo_root / "data"
     sql_dir = repo_root / "sql"
@@ -186,8 +195,9 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
         since_date=since_date,
         api_limit=api_limit,
         api_max_pages=api_max_pages,
+        accident_api_limit=accident_api_limit,
+        accident_api_max_pages=accident_api_max_pages,
         paths=paths,
         api_safety=api_safety,
         compliance=compliance,
     )
-
