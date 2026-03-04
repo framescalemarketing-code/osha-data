@@ -1,4 +1,4 @@
-﻿CREATE OR REPLACE VIEW osha_raw.v_sales_followup_sandiego_v2 AS
+CREATE OR REPLACE VIEW osha_raw.v_sales_followup_sandiego_v2 AS
 WITH inspection_base AS (
   SELECT
     TRIM(estab_name) AS company_name,
