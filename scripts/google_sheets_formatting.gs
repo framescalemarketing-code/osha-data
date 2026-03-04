@@ -13,8 +13,10 @@ const OSHA_SHEET_FORMAT_CONFIG = {
   targetSheetNames: [
     "Bay Area OSHA Follow-Ups",
     "SoCal OSHA Follow-Ups",
+    "v_sales_followup_bayarea_v2",
+    "v_sales_followup_sandiego_v2",
   ],
-  targetSheetNameContains: "OSHA Follow-Ups",
+  targetSheetNameContains: "sales_followup",
 };
 
 function onOpen() {
@@ -79,7 +81,7 @@ function formatSalesSheet_(sheet) {
   const headerRange = sheet.getRange(headerRow, 1, 1, lastCol);
   const headers = headerRange
     .getValues()[0]
-    .map((h) => String(h).trim().toLowerCase());
+    .map((h) => normalizeHeader_(h));
 
   const colIndex = {};
   headers.forEach((name, idx) => {
@@ -202,4 +204,12 @@ function columnToLetter_(column) {
     col = Math.floor((col - rem - 1) / 26);
   }
   return temp;
+}
+
+function normalizeHeader_(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/_+$/g, "");
 }
