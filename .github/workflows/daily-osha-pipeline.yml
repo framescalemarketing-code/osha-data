@@ -97,4 +97,4 @@ jobs:
           done
 
       - name: Run full OSHA pipeline
-        run: python -m pipeline.cli run-full --verbose
+        run: python -m pipeline.cli --verbose run-full
