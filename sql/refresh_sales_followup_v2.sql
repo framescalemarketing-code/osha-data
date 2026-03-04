@@ -55,6 +55,116 @@ violation_metrics AS (
   FROM osha_raw.violation_recent
   GROUP BY 1
 ),
+ppe_focus_metrics AS (
+  SELECT
+    SAFE_CAST(activity_nr AS INT64) AS activity_nr,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
+      OR REGEXP_CONTAINS(
+        LOWER(CONCAT(
+          ' ',
+          COALESCE(CAST(hazsub1 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub2 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub3 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub4 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub5 AS STRING), '')
+        )),
+        r'eye\s*hazard|eye\s*injur|eye\s*expos|face\s*hazard|face\s*injur|goggles?|face\s*shield|protective\s*eyewear|eye\s*and\s*face'
+      )
+    ) AS eye_face_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95')
+    ) AS general_ppe_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+      OR (
+        (REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+        OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102'))
+        AND REGEXP_CONTAINS(
+          LOWER(CONCAT(
+            ' ',
+            COALESCE(CAST(hazsub1 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub2 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub3 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub4 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub5 AS STRING), '')
+          )),
+          r'prescription|lenses?|eyewear'
+        )
+      )
+    ) AS prescription_lens_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95')
+      OR REGEXP_CONTAINS(
+        LOWER(CONCAT(
+          ' ',
+          COALESCE(CAST(hazsub1 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub2 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub3 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub4 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub5 AS STRING), '')
+        )),
+        r'prescription|lenses?|eyewear|face shield|eye protection|eye\s*hazard|face\s*hazard|goggles?|personal protective equipment|ppe'
+      )
+    ) AS ppe_focus_violation_count
+  FROM osha_raw.violation_recent
+  GROUP BY 1
+),
+violation_details AS (
+  SELECT
+    SAFE_CAST(activity_nr AS INT64) AS activity_nr,
+    STRING_AGG(
+      DISTINCT NULLIF(TRIM(CAST(citation_id AS STRING)), ''),
+      ' | ' ORDER BY NULLIF(TRIM(CAST(citation_id AS STRING)), '') LIMIT 12
+    ) AS violation_items,
+    STRING_AGG(
+      DISTINCT NULLIF(TRIM(CAST(standard AS STRING)), ''),
+      ' | ' ORDER BY NULLIF(TRIM(CAST(standard AS STRING)), '') LIMIT 12
+    ) AS standards_cited,
+    STRING_AGG(
+      DISTINCT CASE
+        WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+          THEN 'Prescription lenses: eye protection must fit and work safely with prescription lenses.'
+        WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+          OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
+          THEN 'Eye/face protection: provide and enforce proper eye and face PPE for identified hazards.'
+        WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132')
+          OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95')
+          THEN 'General PPE requirement: assess hazards and provide suitable protective equipment.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'WILLFUL'
+          THEN 'Willful citation: OSHA indicates the requirement was knowingly disregarded.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'REPEAT'
+          THEN 'Repeat citation: similar OSHA requirement was cited previously.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'SERIOUS'
+          THEN 'Serious citation: substantial probability of serious physical harm.'
+        WHEN UPPER(CAST(viol_type AS STRING)) IN ('OTHER-THAN-SERIOUS', 'OTHER THAN SERIOUS')
+          THEN 'Other-than-serious citation: related to safety and health but lower immediate severity.'
+        WHEN NULLIF(TRIM(CAST(standard AS STRING)), '') IS NOT NULL
+          THEN CONCAT('Cited OSHA standard ', TRIM(CAST(standard AS STRING)), '; review full case details for exact language.')
+        ELSE 'OSHA requirement cited; review inspection case details for exact language.'
+      END,
+      ' || ' LIMIT 6
+    ) AS citation_excerpt
+  FROM osha_raw.violation_recent
+  GROUP BY 1
+),
 violation_event_metrics AS (
   SELECT
     SAFE_CAST(activity_nr AS INT64) AS activity_nr,
@@ -179,6 +289,9 @@ scored AS (
     ROUND(COALESCE(vm.total_penalties, 0), 2) AS total_penalties,
     (COALESCE(vm.open_violation_count, 0) > 0) AS open_violation_status,
     COALESCE(vm.open_violation_count, 0) AS open_violation_count,
+    COALESCE(vd.violation_items, '') AS violation_items,
+    COALESCE(vd.standards_cited, '') AS standards_cited,
+    COALESCE(vd.citation_excerpt, '') AS citation_excerpt,
     COALESCE(vem.violation_event_count, 0) AS violation_event_count,
     vem.last_violation_event_date,
     COALESCE(ram.related_activity_count, 0) AS related_activity_count,
@@ -227,6 +340,10 @@ scored AS (
       + CASE WHEN (ic.insp_type = 'B' OR COALESCE(ram.complaint_related_count, 0) > 0) THEN 8 ELSE 0 END
       + CASE WHEN (COALESCE(im.severe_injury_count, 0) > 0 OR COALESCE(am.fatality_case_count, 0) > 0 OR ic.insp_type = 'M') THEN 15 ELSE 0 END
       + CASE WHEN COALESCE(em.emphasis_code_count, 0) > 0 THEN 5 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.eye_face_violation_count, 0) > 0 THEN 8 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.prescription_lens_violation_count, 0) > 0 THEN 6 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.general_ppe_violation_count, 0) > 0 THEN 4 ELSE 0 END
+      + LEAST(COALESCE(pfm.ppe_focus_violation_count, 0) * 2, 8)
       + CASE
           WHEN ic.inspections_90d >= 3 THEN 10
           WHEN ic.inspections_90d = 2 THEN 7
@@ -236,6 +353,8 @@ scored AS (
     ) AS followup_score
   FROM inspection_company ic
   LEFT JOIN violation_metrics vm ON ic.activity_nr = vm.activity_nr
+  LEFT JOIN ppe_focus_metrics pfm ON ic.activity_nr = pfm.activity_nr
+  LEFT JOIN violation_details vd ON ic.activity_nr = vd.activity_nr
   LEFT JOIN violation_event_metrics vem ON ic.activity_nr = vem.activity_nr
   LEFT JOIN related_activity_metrics ram ON ic.activity_nr = ram.activity_nr
   LEFT JOIN emphasis_metrics em ON ic.activity_nr = em.activity_nr
@@ -244,69 +363,72 @@ scored AS (
   WHERE ic.rn = 1
 )
 SELECT
-  region_label AS region,
-  company_name AS account_name,
-  address AS site_address,
-  city AS site_city,
-  state AS site_state,
-  zip AS site_zip,
-  naics_code,
-  industry_segment,
-  owner_type_label AS ownership_type,
-  inspection_type_label AS inspection_type,
-  close_case_date AS latest_case_close_date,
-  days_since_close AS days_since_last_case_close,
-  recency_band AS recency_window,
-  latest_activity_nr AS latest_inspection_id,
-  inspection_count AS inspections_total,
-  inspections_90d AS inspections_last_90_days,
-  violation_count AS violations_total,
-  open_violation_count AS open_violations_total,
-  CASE WHEN open_violation_count > 0 THEN 'Yes' ELSE 'No' END AS has_open_violations,
-  ROUND(total_penalties, 2) AS penalties_total_usd,
-  violation_event_count AS violation_events_total,
-  last_violation_event_date,
-  related_activity_count AS related_activities_total,
-  complaint_activity_count AS complaint_related_activities,
-  CASE WHEN complaint_activity_count > 0 THEN 'Yes' ELSE 'No' END AS has_complaint_signal,
-  emphasis_code_count AS emphasis_codes_total,
-  injury_count AS injuries_total,
-  severe_injury_count AS severe_injuries_total,
-  fatality_case_count AS fatality_cases_total,
-  accident_case_count AS accident_cases_total,
-  last_accident_date,
-  company_latest_close_date AS company_latest_case_close_date,
-  company_latest_load_dt AS company_latest_load_timestamp,
-  followup_score,
+  region_label AS `Region`,
+  company_name AS `Account Name`,
+  address AS `Site Address`,
+  city AS `Site City`,
+  state AS `Site State`,
+  zip AS `Site ZIP`,
+  naics_code AS `NAICS Code`,
+  industry_segment AS `Industry Segment`,
+  owner_type_label AS `Ownership Type`,
+  inspection_type_label AS `Inspection Type`,
+  close_case_date AS `Latest Case Close Date`,
+  days_since_close AS `Days Since Last Case Close`,
+  recency_band AS `Recency Window`,
+  latest_activity_nr AS `Latest Inspection ID`,
+  inspection_count AS `Inspections Total`,
+  inspections_90d AS `Inspections Last 90 Days`,
+  violation_count AS `Violations Total`,
+  open_violation_count AS `Open Violations Total`,
+  CASE WHEN open_violation_count > 0 THEN 'Yes' ELSE 'No' END AS `Has Open Violations`,
+  ROUND(total_penalties, 2) AS `Penalties Total USD`,
+  violation_items AS `Violation Items`,
+  standards_cited AS `Standards Cited`,
+  citation_excerpt AS `Citation Excerpt`,
+  violation_event_count AS `Violation Events Total`,
+  last_violation_event_date AS `Last Violation Event Date`,
+  related_activity_count AS `Related Activities Total`,
+  complaint_activity_count AS `Complaint Related Activities`,
+  CASE WHEN complaint_activity_count > 0 THEN 'Yes' ELSE 'No' END AS `Has Complaint Signal`,
+  emphasis_code_count AS `Emphasis Codes Total`,
+  injury_count AS `Injuries Total`,
+  severe_injury_count AS `Severe Injuries Total`,
+  fatality_case_count AS `Fatality Cases Total`,
+  accident_case_count AS `Accident Cases Total`,
+  last_accident_date AS `Last Accident Date`,
+  company_latest_close_date AS `Company Latest Case Close Date`,
+  company_latest_load_dt AS `Company Latest Load Timestamp`,
+  followup_score AS `Follow-up Score`,
   CASE
     WHEN followup_score >= 85 THEN 'Priority 1'
     WHEN followup_score >= 55 THEN 'Priority 2'
     ELSE 'Priority 3'
-  END AS followup_priority,
+  END AS `Follow-up Priority`,
   CASE
     WHEN severe_injury_indicator OR open_violation_status OR followup_score >= 85 THEN 'Call within 24 hours'
     WHEN followup_score >= 55 THEN 'Call this week'
     ELSE 'Nurture this month'
-  END AS suggested_action,
+  END AS `Suggested Action`,
   CASE
     WHEN followup_score >= 85 THEN 'High'
     WHEN followup_score >= 55 THEN 'Medium'
     ELSE 'Low'
-  END AS buying_likelihood,
+  END AS `Buying Likelihood`,
   CASE
     WHEN followup_score >= 85 THEN 'RED'
     WHEN followup_score >= 55 THEN 'YELLOW'
     ELSE 'GREEN'
-  END AS urgency_band,
+  END AS `Urgency Band`,
   CASE
     WHEN followup_score >= 85 THEN '#F97066'
     WHEN followup_score >= 55 THEN '#F6C344'
     ELSE '#5BB974'
-  END AS urgency_color,
+  END AS `Urgency Color`,
   CASE
     WHEN severe_injury_indicator THEN 'Yes'
     ELSE 'No'
-  END AS severe_incident_signal
+  END AS `Severe Incident Signal`
 FROM scored
 WHERE industry_segment IN (
   'Manufacturing & Production',
@@ -373,6 +495,116 @@ violation_metrics AS (
       (abate_complete IS NULL OR UPPER(CAST(abate_complete AS STRING)) NOT IN ('Y', 'YES', '1', 'TRUE'))
       AND final_order_date IS NULL
     ) AS open_violation_count
+  FROM osha_raw.violation_recent
+  GROUP BY 1
+),
+ppe_focus_metrics AS (
+  SELECT
+    SAFE_CAST(activity_nr AS INT64) AS activity_nr,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
+      OR REGEXP_CONTAINS(
+        LOWER(CONCAT(
+          ' ',
+          COALESCE(CAST(hazsub1 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub2 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub3 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub4 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub5 AS STRING), '')
+        )),
+        r'eye\s*hazard|eye\s*injur|eye\s*expos|face\s*hazard|face\s*injur|goggles?|face\s*shield|protective\s*eyewear|eye\s*and\s*face'
+      )
+    ) AS eye_face_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95')
+    ) AS general_ppe_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+      OR (
+        (REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+        OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102'))
+        AND REGEXP_CONTAINS(
+          LOWER(CONCAT(
+            ' ',
+            COALESCE(CAST(hazsub1 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub2 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub3 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub4 AS STRING), ''),
+            ' ',
+            COALESCE(CAST(hazsub5 AS STRING), '')
+          )),
+          r'prescription|lenses?|eyewear'
+        )
+      )
+    ) AS prescription_lens_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95')
+      OR REGEXP_CONTAINS(
+        LOWER(CONCAT(
+          ' ',
+          COALESCE(CAST(hazsub1 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub2 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub3 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub4 AS STRING), ''),
+          ' ',
+          COALESCE(CAST(hazsub5 AS STRING), '')
+        )),
+        r'prescription|lenses?|eyewear|face shield|eye protection|eye\s*hazard|face\s*hazard|goggles?|personal protective equipment|ppe'
+      )
+    ) AS ppe_focus_violation_count
+  FROM osha_raw.violation_recent
+  GROUP BY 1
+),
+violation_details AS (
+  SELECT
+    SAFE_CAST(activity_nr AS INT64) AS activity_nr,
+    STRING_AGG(
+      DISTINCT NULLIF(TRIM(CAST(citation_id AS STRING)), ''),
+      ' | ' ORDER BY NULLIF(TRIM(CAST(citation_id AS STRING)), '') LIMIT 12
+    ) AS violation_items,
+    STRING_AGG(
+      DISTINCT NULLIF(TRIM(CAST(standard AS STRING)), ''),
+      ' | ' ORDER BY NULLIF(TRIM(CAST(standard AS STRING)), '') LIMIT 12
+    ) AS standards_cited,
+    STRING_AGG(
+      DISTINCT CASE
+        WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+          THEN 'Prescription lenses: eye protection must fit and work safely with prescription lenses.'
+        WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
+          OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
+          THEN 'Eye/face protection: provide and enforce proper eye and face PPE for identified hazards.'
+        WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132')
+          OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95')
+          THEN 'General PPE requirement: assess hazards and provide suitable protective equipment.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'WILLFUL'
+          THEN 'Willful citation: OSHA indicates the requirement was knowingly disregarded.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'REPEAT'
+          THEN 'Repeat citation: similar OSHA requirement was cited previously.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'SERIOUS'
+          THEN 'Serious citation: substantial probability of serious physical harm.'
+        WHEN UPPER(CAST(viol_type AS STRING)) IN ('OTHER-THAN-SERIOUS', 'OTHER THAN SERIOUS')
+          THEN 'Other-than-serious citation: related to safety and health but lower immediate severity.'
+        WHEN NULLIF(TRIM(CAST(standard AS STRING)), '') IS NOT NULL
+          THEN CONCAT('Cited OSHA standard ', TRIM(CAST(standard AS STRING)), '; review full case details for exact language.')
+        ELSE 'OSHA requirement cited; review inspection case details for exact language.'
+      END,
+      ' || ' LIMIT 6
+    ) AS citation_excerpt
   FROM osha_raw.violation_recent
   GROUP BY 1
 ),
@@ -500,6 +732,9 @@ scored AS (
     ROUND(COALESCE(vm.total_penalties, 0), 2) AS total_penalties,
     (COALESCE(vm.open_violation_count, 0) > 0) AS open_violation_status,
     COALESCE(vm.open_violation_count, 0) AS open_violation_count,
+    COALESCE(vd.violation_items, '') AS violation_items,
+    COALESCE(vd.standards_cited, '') AS standards_cited,
+    COALESCE(vd.citation_excerpt, '') AS citation_excerpt,
     COALESCE(vem.violation_event_count, 0) AS violation_event_count,
     vem.last_violation_event_date,
     COALESCE(ram.related_activity_count, 0) AS related_activity_count,
@@ -548,6 +783,10 @@ scored AS (
       + CASE WHEN (ic.insp_type = 'B' OR COALESCE(ram.complaint_related_count, 0) > 0) THEN 8 ELSE 0 END
       + CASE WHEN (COALESCE(im.severe_injury_count, 0) > 0 OR COALESCE(am.fatality_case_count, 0) > 0 OR ic.insp_type = 'M') THEN 15 ELSE 0 END
       + CASE WHEN COALESCE(em.emphasis_code_count, 0) > 0 THEN 5 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.eye_face_violation_count, 0) > 0 THEN 8 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.prescription_lens_violation_count, 0) > 0 THEN 6 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.general_ppe_violation_count, 0) > 0 THEN 4 ELSE 0 END
+      + LEAST(COALESCE(pfm.ppe_focus_violation_count, 0) * 2, 8)
       + CASE
           WHEN ic.inspections_90d >= 3 THEN 10
           WHEN ic.inspections_90d = 2 THEN 7
@@ -557,6 +796,8 @@ scored AS (
     ) AS followup_score
   FROM inspection_company ic
   LEFT JOIN violation_metrics vm ON ic.activity_nr = vm.activity_nr
+  LEFT JOIN ppe_focus_metrics pfm ON ic.activity_nr = pfm.activity_nr
+  LEFT JOIN violation_details vd ON ic.activity_nr = vd.activity_nr
   LEFT JOIN violation_event_metrics vem ON ic.activity_nr = vem.activity_nr
   LEFT JOIN related_activity_metrics ram ON ic.activity_nr = ram.activity_nr
   LEFT JOIN emphasis_metrics em ON ic.activity_nr = em.activity_nr
@@ -565,69 +806,72 @@ scored AS (
   WHERE ic.rn = 1
 )
 SELECT
-  region_label AS region,
-  company_name AS account_name,
-  address AS site_address,
-  city AS site_city,
-  state AS site_state,
-  zip AS site_zip,
-  naics_code,
-  industry_segment,
-  owner_type_label AS ownership_type,
-  inspection_type_label AS inspection_type,
-  close_case_date AS latest_case_close_date,
-  days_since_close AS days_since_last_case_close,
-  recency_band AS recency_window,
-  latest_activity_nr AS latest_inspection_id,
-  inspection_count AS inspections_total,
-  inspections_90d AS inspections_last_90_days,
-  violation_count AS violations_total,
-  open_violation_count AS open_violations_total,
-  CASE WHEN open_violation_count > 0 THEN 'Yes' ELSE 'No' END AS has_open_violations,
-  ROUND(total_penalties, 2) AS penalties_total_usd,
-  violation_event_count AS violation_events_total,
-  last_violation_event_date,
-  related_activity_count AS related_activities_total,
-  complaint_activity_count AS complaint_related_activities,
-  CASE WHEN complaint_activity_count > 0 THEN 'Yes' ELSE 'No' END AS has_complaint_signal,
-  emphasis_code_count AS emphasis_codes_total,
-  injury_count AS injuries_total,
-  severe_injury_count AS severe_injuries_total,
-  fatality_case_count AS fatality_cases_total,
-  accident_case_count AS accident_cases_total,
-  last_accident_date,
-  company_latest_close_date AS company_latest_case_close_date,
-  company_latest_load_dt AS company_latest_load_timestamp,
-  followup_score,
+  region_label AS `Region`,
+  company_name AS `Account Name`,
+  address AS `Site Address`,
+  city AS `Site City`,
+  state AS `Site State`,
+  zip AS `Site ZIP`,
+  naics_code AS `NAICS Code`,
+  industry_segment AS `Industry Segment`,
+  owner_type_label AS `Ownership Type`,
+  inspection_type_label AS `Inspection Type`,
+  close_case_date AS `Latest Case Close Date`,
+  days_since_close AS `Days Since Last Case Close`,
+  recency_band AS `Recency Window`,
+  latest_activity_nr AS `Latest Inspection ID`,
+  inspection_count AS `Inspections Total`,
+  inspections_90d AS `Inspections Last 90 Days`,
+  violation_count AS `Violations Total`,
+  open_violation_count AS `Open Violations Total`,
+  CASE WHEN open_violation_count > 0 THEN 'Yes' ELSE 'No' END AS `Has Open Violations`,
+  ROUND(total_penalties, 2) AS `Penalties Total USD`,
+  violation_items AS `Violation Items`,
+  standards_cited AS `Standards Cited`,
+  citation_excerpt AS `Citation Excerpt`,
+  violation_event_count AS `Violation Events Total`,
+  last_violation_event_date AS `Last Violation Event Date`,
+  related_activity_count AS `Related Activities Total`,
+  complaint_activity_count AS `Complaint Related Activities`,
+  CASE WHEN complaint_activity_count > 0 THEN 'Yes' ELSE 'No' END AS `Has Complaint Signal`,
+  emphasis_code_count AS `Emphasis Codes Total`,
+  injury_count AS `Injuries Total`,
+  severe_injury_count AS `Severe Injuries Total`,
+  fatality_case_count AS `Fatality Cases Total`,
+  accident_case_count AS `Accident Cases Total`,
+  last_accident_date AS `Last Accident Date`,
+  company_latest_close_date AS `Company Latest Case Close Date`,
+  company_latest_load_dt AS `Company Latest Load Timestamp`,
+  followup_score AS `Follow-up Score`,
   CASE
     WHEN followup_score >= 85 THEN 'Priority 1'
     WHEN followup_score >= 55 THEN 'Priority 2'
     ELSE 'Priority 3'
-  END AS followup_priority,
+  END AS `Follow-up Priority`,
   CASE
     WHEN severe_injury_indicator OR open_violation_status OR followup_score >= 85 THEN 'Call within 24 hours'
     WHEN followup_score >= 55 THEN 'Call this week'
     ELSE 'Nurture this month'
-  END AS suggested_action,
+  END AS `Suggested Action`,
   CASE
     WHEN followup_score >= 85 THEN 'High'
     WHEN followup_score >= 55 THEN 'Medium'
     ELSE 'Low'
-  END AS buying_likelihood,
+  END AS `Buying Likelihood`,
   CASE
     WHEN followup_score >= 85 THEN 'RED'
     WHEN followup_score >= 55 THEN 'YELLOW'
     ELSE 'GREEN'
-  END AS urgency_band,
+  END AS `Urgency Band`,
   CASE
     WHEN followup_score >= 85 THEN '#F97066'
     WHEN followup_score >= 55 THEN '#F6C344'
     ELSE '#5BB974'
-  END AS urgency_color,
+  END AS `Urgency Color`,
   CASE
     WHEN severe_injury_indicator THEN 'Yes'
     ELSE 'No'
-  END AS severe_incident_signal
+  END AS `Severe Incident Signal`
 FROM scored
 WHERE industry_segment IN (
   'Manufacturing & Production',
