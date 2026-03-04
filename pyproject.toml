@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osha-sales-pipeline"
+version = "1.0.0"
+description = "Python pipeline for OSHA data ingestion and sales follow-up scoring refresh"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["pipeline"]
+

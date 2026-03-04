@@ -1,0 +1,100 @@
+name: OSHA Daily Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      since_date:
+        description: "Override SINCE_DATE (YYYY-MM-DD). Leave empty to use default env."
+        required: false
+        default: ""
+      api_limit:
+        description: "Override API_LIMIT for this run."
+        required: false
+        default: ""
+      api_max_pages:
+        description: "Override API_MAX_PAGES for this run."
+        required: false
+        default: ""
+  schedule:
+    # 16:10 UTC ~= 08:10 PT during standard time, 09:10 PT during daylight time.
+    - cron: "10 16 * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: osha-daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PROJECT_ID: ${{ vars.PROJECT_ID }}
+      BQ_DATASET: ${{ vars.BQ_DATASET }}
+      SINCE_DATE: ${{ github.event.inputs.since_date }}
+      API_LIMIT: ${{ github.event.inputs.api_limit }}
+      API_MAX_PAGES: ${{ github.event.inputs.api_max_pages }}
+      API_MIN_INTERVAL_SECONDS: ${{ vars.API_MIN_INTERVAL_SECONDS }}
+      API_TIMEOUT_SECONDS: ${{ vars.API_TIMEOUT_SECONDS }}
+      API_MAX_RETRIES: ${{ vars.API_MAX_RETRIES }}
+      API_BASE_BACKOFF_SECONDS: ${{ vars.API_BASE_BACKOFF_SECONDS }}
+      API_MAX_REQUESTS_PER_RUN: ${{ vars.API_MAX_REQUESTS_PER_RUN }}
+      API_USER_AGENT: ${{ vars.API_USER_AGENT }}
+      COMPLIANCE_STRICT_MODE: "true"
+      DOL_API_TERMS_ACCEPTED: "true"
+      DOL_API_POLICY_URL: ${{ vars.DOL_API_POLICY_URL }}
+      DOL_API_POLICY_REVIEWED_ON: ${{ vars.DOL_API_POLICY_REVIEWED_ON }}
+      DOL_API_CONTACT_EMAIL: ${{ vars.DOL_API_CONTACT_EMAIL }}
+      DOL_API_INTENDED_USE: ${{ vars.DOL_API_INTENDED_USE }}
+      DATA_RETENTION_DAYS: ${{ vars.DATA_RETENTION_DAYS }}
+      DOL_API_KEY: ${{ secrets.DOL_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.PROJECT_ID }}
+
+      - name: Validate required env
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            PROJECT_ID
+            BQ_DATASET
+            DOL_API_KEY
+            DOL_API_POLICY_REVIEWED_ON
+            DOL_API_CONTACT_EMAIL
+            DOL_API_INTENDED_USE
+          )
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required value: $key"
+              exit 1
+            fi
+          done
+
+      - name: Run full OSHA pipeline
+        run: python -m pipeline.cli run-full --verbose
