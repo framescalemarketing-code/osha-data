@@ -12,7 +12,7 @@ WITH inspection_base AS (
     safety_hlth,
     DATE(close_case_date) AS close_case_date,
     DATE_DIFF(CURRENT_DATE(), DATE(close_case_date), DAY) AS days_since_close,
-    CAST(_activity_nr_ AS INT64) AS activity_nr,
+    CAST(activity_nr AS INT64) AS activity_nr,
     load_dt
   FROM osha_raw.inspection_socal_incremental
   WHERE DATE(close_case_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)
@@ -333,7 +333,7 @@ WITH inspection_base AS (
     safety_hlth,
     DATE(close_case_date) AS close_case_date,
     DATE_DIFF(CURRENT_DATE(), DATE(close_case_date), DAY) AS days_since_close,
-    CAST(_activity_nr_ AS INT64) AS activity_nr,
+    CAST(activity_nr AS INT64) AS activity_nr,
     load_dt
   FROM osha_raw.inspection_bayarea_incremental
   WHERE DATE(close_case_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)
