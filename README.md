@@ -126,3 +126,19 @@ python .\scripts\setup_full_pipeline_task.py --start-time "09:10"
 ```
 
 This creates/updates task `OSHA Full Pipeline Daily` and disables legacy per-step tasks by default.
+
+## Google Sheets formatting automation
+
+Use Apps Script to automatically reapply sales formatting after Connected Sheets refreshes.
+
+1. Open your target Google Sheet.
+2. Go to `Extensions -> Apps Script`.
+3. Paste the script from `scripts/google_sheets_formatting.gs`.
+4. Save, then run `applySalesFormatting` once (authorize prompts).
+5. Run `installHourlyFormattingTrigger` once.
+
+Notes:
+
+- Default target tabs are `Bay Area OSHA Follow-Ups` and `SoCal OSHA Follow-Ups`.
+- If your tab names differ, edit `targetSheetNames` in the script.
+- The script only replaces rules it manages (marked with `OSHA_RULE_*`) and leaves other conditional rules intact.
