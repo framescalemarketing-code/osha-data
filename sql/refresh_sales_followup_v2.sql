@@ -566,6 +566,54 @@ WHERE industry_segment IN (
   'Specialized / Mixed Environment'
 );
 
+-- Backward-compatible legacy views now sourced from v2 outputs so existing
+-- Connected Sheets can stay on old object names without losing freshness.
+CREATE OR REPLACE VIEW osha_raw.v_sales_followup_target_zips AS
+SELECT
+  company_name,
+  address,
+  city,
+  state,
+  zip,
+  SAFE_CAST(naics_code AS INT64) AS naics_code,
+  owner_type_label,
+  inspection_type_label,
+  close_case_date,
+  days_since_close,
+  recency_band,
+  inspection_count AS inspections_total,
+  inspections_90d,
+  followup_score,
+  followup_priority,
+  suggested_action,
+  company_latest_close_date,
+  company_latest_load_dt,
+  latest_activity_nr
+FROM osha_raw.v_sales_followup_sandiego_v2;
+
+CREATE OR REPLACE VIEW osha_raw.v_sales_followup_bayarea_zips AS
+SELECT
+  company_name,
+  address,
+  city,
+  state,
+  zip,
+  SAFE_CAST(naics_code AS INT64) AS naics_code,
+  owner_type_label,
+  inspection_type_label,
+  close_case_date,
+  days_since_close,
+  recency_band,
+  inspection_count AS inspections_total,
+  inspections_90d,
+  followup_score,
+  followup_priority,
+  suggested_action,
+  company_latest_close_date,
+  company_latest_load_dt,
+  latest_activity_nr
+FROM osha_raw.v_sales_followup_bayarea_v2;
+
 CREATE OR REPLACE TABLE osha_raw.sales_followup_sandiego_current AS
 SELECT * FROM osha_raw.v_sales_followup_sandiego_v2;
 
