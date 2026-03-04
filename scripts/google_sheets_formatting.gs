@@ -18,16 +18,16 @@ const OSHA_SHEET_FORMAT_CONFIG = {
 
   // source tab -> styled mirror tab
   mirrorTabBySource: {
-    v_sales_followup_bayarea_v2: "Bay Area OSHA Follow-Ups",
-    v_sales_followup_sandiego_v2: "SoCal OSHA Follow-Ups",
+    v_sales_followup_bayarea_v2: "Bay Area",
+    v_sales_followup_sandiego_v2: "San Diego",
   },
 
   // Additional non-datasource tabs you may want formatted.
   directTargetSheetNames: [
-    "Bay Area OSHA Follow-Ups",
-    "SoCal OSHA Follow-Ups",
-    "Bay Area OSHA Follow-Ups (Styled)",
-    "SoCal OSHA Follow-Ups (Styled)",
+    "Bay Area",
+    "San Diego",
+    "Bay Area (Styled)",
+    "San Diego (Styled)",
   ],
 
   // Fallback discovery for non-datasource tabs.
