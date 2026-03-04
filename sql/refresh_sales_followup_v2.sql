@@ -140,6 +140,86 @@ violation_details AS (
     ) AS standards_cited,
     STRING_AGG(
       DISTINCT CASE
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910133|1926102)')
+          THEN 'Eye and Face Protection'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910132|192695|1514)')
+          THEN 'PPE Selection and Use'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1509|3203|6401)')
+          THEN 'Safety Program and Training (IIPP)'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^1512')
+          THEN 'Medical/First Aid Readiness'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(15411|15410001|1541|1629|1632)')
+          THEN 'Fall Protection and Safe Access'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3395')
+          THEN 'Heat Illness and Environmental Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3396')
+          THEN 'Heat Illness and Environmental Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(5162|5193)')
+          THEN 'Health Exposure and Respiratory/Biological Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(3382|3384|3227)')
+          THEN 'PPE Selection and Use'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(6151|6175|3664|3666|1630)')
+          THEN 'Fall Protection and Safe Access'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(19100157|19260150)')
+          THEN 'Fire Protection and Emergency Readiness'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^19260701')
+          THEN 'Construction Work Practice Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^542')
+          THEN 'Permit and Regulatory Process'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^341')
+          THEN 'Permit and Regulatory Process'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'WILLFUL'
+          THEN 'High-Risk Compliance Behavior'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'REPEAT'
+          THEN 'Repeat Compliance Gaps'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'SERIOUS'
+          THEN 'Serious Safety Risk'
+        ELSE NULL
+      END,
+      ' | ' LIMIT 4
+    ) AS citation_sales_category,
+    STRING_AGG(
+      DISTINCT CASE
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910133|1926102)')
+          THEN 'Eye/face hazard controls were not adequate; strong opportunity for protective eyewear standardization and fit testing.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910132|192695|1514)')
+          THEN 'PPE selection/enforcement gap; position safety eyewear as part of a broader PPE compliance rollout.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1509|3203|6401)')
+          THEN 'Safety program/training process gap; bundle eyewear program support with onboarding and recurring safety training.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^1512')
+          THEN 'Medical readiness and response expectations are in focus; emphasize incident prevention through reliable daily eye protection.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(15411|15410001|1541|1629|1632)')
+          THEN 'Work-at-height/access risk context; position durable, secure-fit eyewear for active and elevated work conditions.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3395')
+          THEN 'Heat or environmental exposure controls are in focus; position anti-fog and all-day wearable protective eyewear.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3396')
+          THEN 'Heat or environmental exposure controls are in focus; position anti-fog and all-day wearable protective eyewear.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(5162|5193)')
+          THEN 'Health exposure controls are in focus; position sealed or specialty protective eyewear matched to exposure risk.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(3382|3384|3227)')
+          THEN 'PPE performance and enforcement gaps exist; position a standardized safety eyewear rollout with manager accountability.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(6151|6175|3664|3666|1630)')
+          THEN 'Active work-at-height or access-control issues are present; lead with secure-fit, durable eyewear suited to mobile crews.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(19100157|19260150)')
+          THEN 'Emergency/fire readiness is in scope; align eyewear program with broader emergency preparedness and PPE compliance.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^19260701')
+          THEN 'Construction work-practice controls are under review; position site-ready eyewear standards for consistent field execution.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^542')
+          THEN 'Regulatory process scrutiny is present; offer documented eyewear policy and audit trail to reduce repeat citations.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^341')
+          THEN 'Permit/regulatory process scrutiny; offer a documented eyewear policy to reduce repeat findings during inspections.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'WILLFUL'
+          THEN 'High urgency account: prioritize immediate outreach with a compliance-first eyewear implementation plan.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'REPEAT'
+          THEN 'Recurring issue account: pitch a standardized multi-site eyewear program with measurable compliance tracking.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'SERIOUS'
+          THEN 'Serious risk account: lead with fast deployment and manager controls for eye/face PPE consistency.'
+        ELSE NULL
+      END,
+      ' || ' LIMIT 4
+    ) AS citation_sales_explanation,
+    STRING_AGG(
+      DISTINCT CASE
         WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
           THEN 'Prescription lenses: eye protection must fit and work safely with prescription lenses.'
         WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
@@ -291,6 +371,8 @@ scored AS (
     COALESCE(vm.open_violation_count, 0) AS open_violation_count,
     COALESCE(vd.violation_items, '') AS violation_items,
     COALESCE(vd.standards_cited, '') AS standards_cited,
+    COALESCE(vd.citation_sales_category, 'General OSHA Compliance') AS citation_sales_category,
+    COALESCE(vd.citation_sales_explanation, 'OSHA cited a compliance gap; use discovery questions to map hazards and recommend the right safety eyewear program.') AS citation_sales_explanation,
     COALESCE(vd.citation_excerpt, '') AS citation_excerpt,
     COALESCE(vem.violation_event_count, 0) AS violation_event_count,
     vem.last_violation_event_date,
@@ -385,6 +467,8 @@ SELECT
   ROUND(total_penalties, 2) AS `Penalties Total USD`,
   violation_items AS `Violation Items`,
   standards_cited AS `Standards Cited`,
+  citation_sales_category AS `Citation Category`,
+  citation_sales_explanation AS `Citation Sales Explanation`,
   citation_excerpt AS `Citation Excerpt`,
   violation_event_count AS `Violation Events Total`,
   last_violation_event_date AS `Last Violation Event Date`,
@@ -583,6 +667,86 @@ violation_details AS (
     ) AS standards_cited,
     STRING_AGG(
       DISTINCT CASE
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910133|1926102)')
+          THEN 'Eye and Face Protection'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910132|192695|1514)')
+          THEN 'PPE Selection and Use'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1509|3203|6401)')
+          THEN 'Safety Program and Training (IIPP)'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^1512')
+          THEN 'Medical/First Aid Readiness'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(15411|15410001|1541|1629|1632)')
+          THEN 'Fall Protection and Safe Access'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3395')
+          THEN 'Heat Illness and Environmental Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3396')
+          THEN 'Heat Illness and Environmental Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(5162|5193)')
+          THEN 'Health Exposure and Respiratory/Biological Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(3382|3384|3227)')
+          THEN 'PPE Selection and Use'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(6151|6175|3664|3666|1630)')
+          THEN 'Fall Protection and Safe Access'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(19100157|19260150)')
+          THEN 'Fire Protection and Emergency Readiness'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^19260701')
+          THEN 'Construction Work Practice Controls'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^542')
+          THEN 'Permit and Regulatory Process'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^341')
+          THEN 'Permit and Regulatory Process'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'WILLFUL'
+          THEN 'High-Risk Compliance Behavior'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'REPEAT'
+          THEN 'Repeat Compliance Gaps'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'SERIOUS'
+          THEN 'Serious Safety Risk'
+        ELSE NULL
+      END,
+      ' | ' LIMIT 4
+    ) AS citation_sales_category,
+    STRING_AGG(
+      DISTINCT CASE
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910133|1926102)')
+          THEN 'Eye/face hazard controls were not adequate; strong opportunity for protective eyewear standardization and fit testing.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1910132|192695|1514)')
+          THEN 'PPE selection/enforcement gap; position safety eyewear as part of a broader PPE compliance rollout.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(1509|3203|6401)')
+          THEN 'Safety program/training process gap; bundle eyewear program support with onboarding and recurring safety training.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^1512')
+          THEN 'Medical readiness and response expectations are in focus; emphasize incident prevention through reliable daily eye protection.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(15411|15410001|1541|1629|1632)')
+          THEN 'Work-at-height/access risk context; position durable, secure-fit eyewear for active and elevated work conditions.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3395')
+          THEN 'Heat or environmental exposure controls are in focus; position anti-fog and all-day wearable protective eyewear.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^3396')
+          THEN 'Heat or environmental exposure controls are in focus; position anti-fog and all-day wearable protective eyewear.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(5162|5193)')
+          THEN 'Health exposure controls are in focus; position sealed or specialty protective eyewear matched to exposure risk.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(3382|3384|3227)')
+          THEN 'PPE performance and enforcement gaps exist; position a standardized safety eyewear rollout with manager accountability.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(6151|6175|3664|3666|1630)')
+          THEN 'Active work-at-height or access-control issues are present; lead with secure-fit, durable eyewear suited to mobile crews.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^(19100157|19260150)')
+          THEN 'Emergency/fire readiness is in scope; align eyewear program with broader emergency preparedness and PPE compliance.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^19260701')
+          THEN 'Construction work-practice controls are under review; position site-ready eyewear standards for consistent field execution.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^542')
+          THEN 'Regulatory process scrutiny is present; offer documented eyewear policy and audit trail to reduce repeat citations.'
+        WHEN REGEXP_CONTAINS(REGEXP_REPLACE(UPPER(CAST(standard AS STRING)), r'[^A-Z0-9]', ''), r'^341')
+          THEN 'Permit/regulatory process scrutiny; offer a documented eyewear policy to reduce repeat findings during inspections.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'WILLFUL'
+          THEN 'High urgency account: prioritize immediate outreach with a compliance-first eyewear implementation plan.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'REPEAT'
+          THEN 'Recurring issue account: pitch a standardized multi-site eyewear program with measurable compliance tracking.'
+        WHEN UPPER(CAST(viol_type AS STRING)) = 'SERIOUS'
+          THEN 'Serious risk account: lead with fast deployment and manager controls for eye/face PPE consistency.'
+        ELSE NULL
+      END,
+      ' || ' LIMIT 4
+    ) AS citation_sales_explanation,
+    STRING_AGG(
+      DISTINCT CASE
         WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
           THEN 'Prescription lenses: eye protection must fit and work safely with prescription lenses.'
         WHEN REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
@@ -734,6 +898,8 @@ scored AS (
     COALESCE(vm.open_violation_count, 0) AS open_violation_count,
     COALESCE(vd.violation_items, '') AS violation_items,
     COALESCE(vd.standards_cited, '') AS standards_cited,
+    COALESCE(vd.citation_sales_category, 'General OSHA Compliance') AS citation_sales_category,
+    COALESCE(vd.citation_sales_explanation, 'OSHA cited a compliance gap; use discovery questions to map hazards and recommend the right safety eyewear program.') AS citation_sales_explanation,
     COALESCE(vd.citation_excerpt, '') AS citation_excerpt,
     COALESCE(vem.violation_event_count, 0) AS violation_event_count,
     vem.last_violation_event_date,
@@ -828,6 +994,8 @@ SELECT
   ROUND(total_penalties, 2) AS `Penalties Total USD`,
   violation_items AS `Violation Items`,
   standards_cited AS `Standards Cited`,
+  citation_sales_category AS `Citation Category`,
+  citation_sales_explanation AS `Citation Sales Explanation`,
   citation_excerpt AS `Citation Excerpt`,
   violation_event_count AS `Violation Events Total`,
   last_violation_event_date AS `Last Violation Event Date`,
