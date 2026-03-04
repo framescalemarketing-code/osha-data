@@ -572,3 +572,7 @@ SELECT * FROM osha_raw.v_sales_followup_sandiego_v2;
 CREATE OR REPLACE TABLE osha_raw.sales_followup_bayarea_current AS
 SELECT * FROM osha_raw.v_sales_followup_bayarea_v2;
 
+-- Backward-compatible legacy output kept in sync for existing Connected Sheets.
+CREATE OR REPLACE TABLE osha_raw.sales_followup_current AS
+SELECT * FROM osha_raw.v_sales_followup_target_zips;
+
