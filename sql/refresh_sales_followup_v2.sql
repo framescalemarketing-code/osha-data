@@ -833,9 +833,9 @@ SELECT
   ROUND(followup_percentile * 100, 1) AS `Follow-up Percentile`,
   prescription_lens_violation_count AS `Prescription Signal Count`,
   direct_prescription_standard_count AS `Direct Prescription Citation Count`,
-  eye_face_violation_count AS `Eye/Face Citation Count`,
+  eye_face_violation_count AS `Eye Face Citation Count`,
   general_ppe_violation_count AS `General PPE Citation Count`,
-  proper_fit_selection_violation_count AS `Fit/Selection Citation Count`,
+  proper_fit_selection_violation_count AS `Fit Selection Citation Count`,
   quality_signal_count AS `Quality Signal Count`,
   CASE
     WHEN prescription_program_signal
@@ -1811,9 +1811,9 @@ SELECT
   ROUND(followup_percentile * 100, 1) AS `Follow-up Percentile`,
   prescription_lens_violation_count AS `Prescription Signal Count`,
   direct_prescription_standard_count AS `Direct Prescription Citation Count`,
-  eye_face_violation_count AS `Eye/Face Citation Count`,
+  eye_face_violation_count AS `Eye Face Citation Count`,
   general_ppe_violation_count AS `General PPE Citation Count`,
-  proper_fit_selection_violation_count AS `Fit/Selection Citation Count`,
+  proper_fit_selection_violation_count AS `Fit Selection Citation Count`,
   quality_signal_count AS `Quality Signal Count`,
   CASE
     WHEN prescription_program_signal
