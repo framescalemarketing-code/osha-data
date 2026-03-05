@@ -85,6 +85,9 @@ class PipelineConfig:
     project_id: str
     dataset: str
     api_key: str
+    census_api_key: str
+    bls_api_key: str
+    census_cbp_year: int
     since_date: str
     api_limit: int
     api_max_pages: int
@@ -102,6 +105,9 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
     project_id = env_value("PROJECT_ID", dotenv_values, "osha-data-live-20260303")
     dataset = env_value("BQ_DATASET", dotenv_values, "osha_raw")
     api_key = env_value("DOL_API_KEY", dotenv_values, "")
+    census_api_key = env_value("CENSUS_API_KEY", dotenv_values, "")
+    bls_api_key = env_value("BLS_API_KEY", dotenv_values, "")
+    census_cbp_year = _parse_int(env_value("CENSUS_CBP_YEAR", dotenv_values, "2022"), 2022)
     since_date = env_value("SINCE_DATE", dotenv_values, default_since_date())
     api_limit = _parse_int(env_value("API_LIMIT", dotenv_values, "5000"), 5000)
     api_max_pages = _parse_int(env_value("API_MAX_PAGES", dotenv_values, "2"), 2)
@@ -192,6 +198,9 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
         project_id=project_id,
         dataset=dataset,
         api_key=api_key,
+        census_api_key=census_api_key,
+        bls_api_key=bls_api_key,
+        census_cbp_year=census_cbp_year,
         since_date=since_date,
         api_limit=api_limit,
         api_max_pages=api_max_pages,

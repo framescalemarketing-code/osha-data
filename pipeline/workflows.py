@@ -11,6 +11,7 @@ from pipeline.config import PipelineConfig
 from pipeline.csv_utils import csv_data_row_count
 from pipeline.dol_api import DolApiClient
 from pipeline.extract import query_endpoint_to_csv, query_inspection_incremental
+from pipeline.public_signals import run_public_signals_ingest
 
 
 ENDPOINT_SCHEMAS = {
@@ -222,8 +223,17 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         max_pages=1,
     )
 
-    logging.info("Stage 3/3: Ingest enrichment endpoints and refresh sales outputs.")
+    logging.info("Stage 3/4: Ingest enrichment endpoints and refresh sales outputs.")
     run_enrichment_ingest(config=config, client=client)
+
+    logging.info("Stage 4/4: Pull public enrichment signals (Census, BLS, USAspending).")
+    try:
+        run_public_signals_ingest(config)
+    except Exception as exc:
+        logging.warning(
+            "Public signals stage failed; continuing with OSHA outputs only: %s",
+            exc,
+        )
 
     elapsed = time.perf_counter() - start
     logging.info("OSHA full pipeline finished in %.1fs.", elapsed)

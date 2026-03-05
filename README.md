@@ -16,6 +16,7 @@ The pipeline now runs through Python with:
 1. SoCal inspection incremental pull + BigQuery load
 2. Bay Area inspection incremental pull + BigQuery load
 3. Enrichment endpoint pulls + BigQuery loads + v2 sales SQL refresh
+4. Public enrichment pulls (Census CBP, BLS, USAspending) + derived public signals tables
 
 Primary command:
 
@@ -28,6 +29,7 @@ python -m pipeline.cli run-full
 - `pipeline/`: Python package with config, compliance, API client, extractors, and workflows
 - `scripts/*.py`: task-oriented entrypoints for direct use and scheduler integration
 - `sql/refresh_sales_followup_v2.sql`: scoring/view refresh logic
+- `sql/refresh_public_signals.sql`: public enrichment summary tables
 - `data/`: runtime CSV/checkpoint artifacts (gitignored except `.gitkeep`)
 
 ## Compliance and API controls
@@ -70,7 +72,20 @@ Run individual stages:
 python -m pipeline.cli ingest-socal
 python -m pipeline.cli ingest-bayarea
 python -m pipeline.cli ingest-enrichment
+python -m pipeline.cli ingest-public-signals
 ```
+
+Public signals wrapper script:
+
+```powershell
+python .\scripts\run_daily_public_signals.py
+```
+
+Additional `.env` keys for public signals:
+
+- `CENSUS_API_KEY` (optional but recommended)
+- `BLS_API_KEY` (optional but recommended)
+- `CENSUS_CBP_YEAR` (optional, default `2022`)
 
 Ad-hoc pulls:
 

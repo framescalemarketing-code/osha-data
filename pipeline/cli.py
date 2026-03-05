@@ -17,6 +17,7 @@ from pipeline.workflows import (
     run_enrichment_ingest,
     run_full_pipeline,
     run_inspection_ingest,
+    run_public_signals_ingest,
     run_preflight_checks,
 )
 
@@ -108,6 +109,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_common_run_args(ingest_enrich)
 
+    ingest_public = sub.add_parser(
+        "ingest-public-signals",
+        help="Pull Census/BLS/USAspending public signals and load BigQuery tables",
+    )
+    _add_common_run_args(ingest_public)
+
     q_inspection = sub.add_parser(
         "query-inspection",
         help="Pull inspection endpoint incrementally to CSV",
@@ -146,10 +153,21 @@ def main(argv: list[str] | None = None) -> int:
     config = _apply_overrides(config, args)
     client = _build_client(config)
 
-    try:
-        run_preflight_checks(config)
-    except ComplianceError:
-        raise
+    dol_commands = {
+        "run-full",
+        "ingest-socal",
+        "ingest-bayarea",
+        "ingest-enrichment",
+        "query-inspection",
+        "query-endpoint",
+    }
+    if args.command in dol_commands:
+        try:
+            run_preflight_checks(config)
+        except ComplianceError:
+            raise
+    else:
+        config.paths.data_dir.mkdir(parents=True, exist_ok=True)
 
     if args.command == "run-full":
         run_full_pipeline(config, client)
@@ -181,6 +199,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest-enrichment":
         run_enrichment_ingest(config=config, client=client)
+        return 0
+
+    if args.command == "ingest-public-signals":
+        run_public_signals_ingest(config)
         return 0
 
     if args.command == "query-inspection":

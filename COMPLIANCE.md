@@ -33,6 +33,16 @@ If any required field is missing and `COMPLIANCE_STRICT_MODE=true`, the run fail
 - Review DOL API policy periodically and update `DOL_API_POLICY_REVIEWED_ON`.
 - Keep an auditable changelog of scoring SQL and outbound usage of derived tables.
 
+## Public enrichment sources
+
+When using Census/BLS/USAspending public APIs:
+
+- Use public endpoints only (no sensitive/FOUO endpoints).
+- Follow source attribution/disclaimer language required by each provider.
+- Do not imply agency endorsement of your product or analysis.
+- Do not alter source data and present it as unchanged official output.
+- Keep per-source access dates in reports/dashboards for auditability.
+
 ## Operational note
 
 Compliance controls in code reduce accidental misuse but do not replace legal review. Your organization remains responsible for confirming permitted use under DOL terms and applicable law.

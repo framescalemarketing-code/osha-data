@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from pathlib import Path
 
 
@@ -9,8 +10,11 @@ class BigQueryCommandError(RuntimeError):
 
 
 def _run(command: list[str], cwd: Path) -> None:
+    exec_command = command
+    if os.name == "nt":
+        exec_command = ["cmd", "/c", *command]
     proc = subprocess.run(
-        command,
+        exec_command,
         cwd=str(cwd),
         check=False,
         capture_output=True,
@@ -56,8 +60,11 @@ def bq_load_csv(
 
 
 def bq_query_sql(*, repo_root: Path, project_id: str, sql_text: str) -> None:
+    command = ["bq", "query", f"--project_id={project_id}", "--use_legacy_sql=false"]
+    if os.name == "nt":
+        command = ["cmd", "/c", *command]
     proc = subprocess.run(
-        ["bq", "query", f"--project_id={project_id}", "--use_legacy_sql=false"],
+        command,
         cwd=str(repo_root),
         check=False,
         capture_output=True,
