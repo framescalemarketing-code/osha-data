@@ -60,6 +60,7 @@ def bq_load_csv(
 
 
 def bq_query_sql(*, repo_root: Path, project_id: str, sql_text: str) -> None:
+    normalized_sql = sql_text.lstrip("\ufeff")
     command = ["bq", "query", f"--project_id={project_id}", "--use_legacy_sql=false"]
     if os.name == "nt":
         command = ["cmd", "/c", *command]
@@ -69,7 +70,7 @@ def bq_query_sql(*, repo_root: Path, project_id: str, sql_text: str) -> None:
         check=False,
         capture_output=True,
         text=True,
-        input=sql_text,
+        input=normalized_sql,
     )
     if proc.returncode != 0:
         raise BigQueryCommandError(
