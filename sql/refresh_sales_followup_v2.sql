@@ -90,6 +90,7 @@ ppe_focus_metrics AS (
     ) AS general_ppe_violation_count,
     COUNTIF(
       REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102\(a\)\(3\)')
       OR (
         (REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
         OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102'))
@@ -110,6 +111,19 @@ ppe_focus_metrics AS (
         )
       )
     ) AS prescription_lens_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102\(a\)\(3\)')
+    ) AS direct_prescription_standard_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(2\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102\(a\)\(2\)')
+    ) AS side_protection_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132\(d\)\(1\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132\(f\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95\(c\)\(2\)')
+    ) AS proper_fit_selection_violation_count,
     COUNTIF(
       REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
       OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
@@ -469,23 +483,25 @@ scored AS (
       ELSE 8
     END AS industry_fit_points,
     CASE
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(3391|3345)') THEN 'Medical Devices & Diagnostics'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(5417|54138|3254)') THEN 'Laboratory & Research'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(31|32|33)') THEN 'Manufacturing & Production'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^23') THEN 'Construction & Field Work'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^22') THEN 'Utilities & Field Services'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(42|48|49)') THEN 'Warehouse & Distribution'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^56') THEN 'Field Services & Building Support'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^62') THEN 'Healthcare & Clinical'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^3391') THEN 'Medical Devices & Vision Products'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^3345') THEN 'Diagnostics, Instruments & Technical Equipment'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^3254') THEN 'Biotech, Pharma & Life Sciences Manufacturing'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(5417|54138)') THEN 'Laboratory, Research & Biotechnology Services'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(31|32|33)') THEN 'Industrial Manufacturing & Fabrication'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^23') THEN 'Construction, Trades & Field Crews'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^22') THEN 'Utilities, Energy & Infrastructure'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(42|48|49)') THEN 'Warehouse, Logistics & Distribution'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^56') THEN 'Contract Field Services & Building Operations'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^62') THEN 'Healthcare, Clinics & Care Delivery'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^92') OR ic.owner_type IN ('B', 'C', 'D') THEN 'Public Sector & Municipal'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^61') THEN 'Education & Institutions'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^(44|45)') THEN 'Retail Trade'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^72') THEN 'Food Service & Hospitality'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(51|52|53|54|55)') THEN 'Professional & Office Services'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(51|52|53|54|55)') THEN 'Professional, Technical & Office Services'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^(11|21)') THEN 'Agriculture, Energy & Extraction'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^71') THEN 'Arts, Entertainment & Recreation'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^81') THEN 'Local Services & Repair'
-      ELSE 'Other / Unclassified'
+      ELSE 'Other / Mixed Operations'
     END AS industry_segment,
     CASE ic.owner_type
       WHEN 'A' THEN 'Private'
@@ -532,6 +548,33 @@ scored AS (
     COALESCE(vd.citation_sales_category, 'General OSHA Compliance') AS citation_sales_category,
     COALESCE(vd.citation_sales_explanation, 'OSHA cited a compliance gap; use discovery questions to map hazards and recommend the right safety eyewear program.') AS citation_sales_explanation,
     COALESCE(vd.citation_excerpt, '') AS citation_excerpt,
+    COALESCE(pfm.eye_face_violation_count, 0) AS eye_face_violation_count,
+    COALESCE(pfm.general_ppe_violation_count, 0) AS general_ppe_violation_count,
+    COALESCE(pfm.prescription_lens_violation_count, 0) AS prescription_lens_violation_count,
+    COALESCE(pfm.direct_prescription_standard_count, 0) AS direct_prescription_standard_count,
+    COALESCE(pfm.side_protection_violation_count, 0) AS side_protection_violation_count,
+    COALESCE(pfm.proper_fit_selection_violation_count, 0) AS proper_fit_selection_violation_count,
+    (
+      COALESCE(pfm.direct_prescription_standard_count, 0) > 0
+      OR COALESCE(pfm.prescription_lens_violation_count, 0) > 0
+      OR (
+        COALESCE(pfm.eye_face_violation_count, 0) > 0
+        AND COALESCE(pfm.proper_fit_selection_violation_count, 0) > 0
+        AND COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 20
+      )
+    ) AS prescription_program_signal,
+    CASE
+      WHEN (
+        COALESCE(pfm.direct_prescription_standard_count, 0) > 0
+        OR COALESCE(pfm.prescription_lens_violation_count, 0) > 0
+        OR (
+          COALESCE(pfm.eye_face_violation_count, 0) > 0
+          AND COALESCE(pfm.proper_fit_selection_violation_count, 0) > 0
+          AND COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 20
+        )
+      ) THEN 'Prescription Safety'
+      ELSE 'General PPE / Eyewear'
+    END AS program_relevance_label,
     COALESCE(vem.violation_event_count, 0) AS violation_event_count,
     vem.last_violation_event_date,
     COALESCE(ram.related_activity_count, 0) AS related_activity_count,
@@ -669,6 +712,9 @@ scored AS (
       + CASE WHEN COALESCE(em.emphasis_code_count, 0) > 0 THEN 5 ELSE 0 END
       + CASE WHEN COALESCE(pfm.eye_face_violation_count, 0) > 0 THEN 8 ELSE 0 END
       + CASE WHEN COALESCE(pfm.prescription_lens_violation_count, 0) > 0 THEN 6 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.direct_prescription_standard_count, 0) > 0 THEN 18 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.proper_fit_selection_violation_count, 0) > 0 THEN 8 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.side_protection_violation_count, 0) > 0 THEN 4 ELSE 0 END
       + CASE WHEN COALESCE(pfm.general_ppe_violation_count, 0) > 0 THEN 4 ELSE 0 END
       + LEAST(COALESCE(pfm.ppe_focus_violation_count, 0) * 2, 8)
       + CASE
@@ -706,6 +752,8 @@ ranked AS (
       + CASE WHEN s.total_penalties >= 5000 THEN 1 ELSE 0 END
       + CASE WHEN s.hazard_exposure_points >= 6 THEN 1 ELSE 0 END
       + CASE WHEN s.inspections_90d >= 1 THEN 1 ELSE 0 END
+      + CASE WHEN s.prescription_program_signal THEN 1 ELSE 0 END
+      + CASE WHEN s.direct_prescription_standard_count > 0 THEN 1 ELSE 0 END
     ) AS quality_signal_count
   FROM scored s
 )
@@ -763,7 +811,7 @@ SELECT
   ROUND(total_penalties, 2) AS `Penalties Total USD`,
   violation_items AS `Violation Items`,
   standards_cited AS `Standards Cited`,
-  citation_sales_category AS `Citation Category`,
+  program_relevance_label AS `Program Relevance`,
   citation_sales_explanation AS `Citation Sales Explanation`,
   citation_excerpt AS `Citation Excerpt`,
   violation_event_count AS `Violation Events Total`,
@@ -783,30 +831,115 @@ SELECT
   company_latest_load_dt AS `Company Latest Load Timestamp`,
   followup_score AS `Follow-up Score`,
   ROUND(followup_percentile * 100, 1) AS `Follow-up Percentile`,
+  prescription_lens_violation_count AS `Prescription Signal Count`,
+  direct_prescription_standard_count AS `Direct Prescription Citation Count`,
+  eye_face_violation_count AS `Eye/Face Citation Count`,
+  general_ppe_violation_count AS `General PPE Citation Count`,
+  proper_fit_selection_violation_count AS `Fit/Selection Citation Count`,
   quality_signal_count AS `Quality Signal Count`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN 'Priority 1'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'Priority 2'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'Priority 1'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'Priority 2'
     ELSE 'Priority 3'
   END AS `Follow-up Priority`,
   CASE
-    WHEN severe_injury_indicator OR open_violation_status OR (followup_percentile >= 0.90 AND quality_signal_count >= 2) THEN 'Call within 24 hours'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'Call this week'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'Call within 24 hours'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'Call this week'
     ELSE 'Nurture this month'
   END AS `Suggested Action`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN 'High'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'Medium'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'High'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'Medium'
     ELSE 'Low'
   END AS `Buying Likelihood`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN 'RED'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'YELLOW'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'RED'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'YELLOW'
     ELSE 'GREEN'
   END AS `Urgency Band`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN '#F97066'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN '#F6C344'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN '#F97066'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN '#F6C344'
     ELSE '#5BB974'
   END AS `Urgency Color`,
   CASE
@@ -815,23 +948,32 @@ SELECT
   END AS `Severe Incident Signal`
 FROM ranked
 WHERE industry_segment IN (
-  'Medical Devices & Diagnostics',
-  'Manufacturing & Production',
-  'Construction & Field Work',
-  'Utilities & Field Services',
-  'Warehouse & Distribution',
-  'Field Services & Building Support',
-  'Healthcare & Clinical',
+  'Medical Devices & Vision Products',
+  'Diagnostics, Instruments & Technical Equipment',
+  'Biotech, Pharma & Life Sciences Manufacturing',
+  'Laboratory, Research & Biotechnology Services',
+  'Industrial Manufacturing & Fabrication',
+  'Construction, Trades & Field Crews',
+  'Utilities, Energy & Infrastructure',
+  'Warehouse, Logistics & Distribution',
+  'Contract Field Services & Building Operations',
+  'Healthcare, Clinics & Care Delivery',
   'Public Sector & Municipal',
-  'Laboratory & Research',
   'Education & Institutions',
   'Retail Trade',
   'Food Service & Hospitality',
-  'Professional & Office Services',
+  'Professional, Technical & Office Services',
   'Agriculture, Energy & Extraction',
   'Arts, Entertainment & Recreation',
   'Local Services & Repair',
-  'Other / Unclassified'
+  'Other / Mixed Operations'
+)
+AND (
+  prescription_program_signal
+  OR eye_face_violation_count > 0
+  OR side_protection_violation_count > 0
+  OR (general_ppe_violation_count > 0 AND hazard_exposure_points >= 6)
+  OR (hazard_exposure_points >= 12 AND employee_count_estimate >= 20)
 );
 
 CREATE OR REPLACE VIEW osha_raw.v_sales_followup_bayarea_v2 AS
@@ -926,6 +1068,7 @@ ppe_focus_metrics AS (
     ) AS general_ppe_violation_count,
     COUNTIF(
       REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102\(a\)\(3\)')
       OR (
         (REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
         OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102'))
@@ -946,6 +1089,19 @@ ppe_focus_metrics AS (
         )
       )
     ) AS prescription_lens_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(3\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102\(a\)\(3\)')
+    ) AS direct_prescription_standard_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133\(a\)\(2\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102\(a\)\(2\)')
+    ) AS side_protection_violation_count,
+    COUNTIF(
+      REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132\(d\)\(1\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.132\(f\)')
+      OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.95\(c\)\(2\)')
+    ) AS proper_fit_selection_violation_count,
     COUNTIF(
       REGEXP_CONTAINS(CAST(standard AS STRING), r'^1910\.133')
       OR REGEXP_CONTAINS(CAST(standard AS STRING), r'^1926\.102')
@@ -1305,23 +1461,25 @@ scored AS (
       ELSE 8
     END AS industry_fit_points,
     CASE
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(3391|3345)') THEN 'Medical Devices & Diagnostics'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(5417|54138|3254)') THEN 'Laboratory & Research'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(31|32|33)') THEN 'Manufacturing & Production'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^23') THEN 'Construction & Field Work'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^22') THEN 'Utilities & Field Services'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(42|48|49)') THEN 'Warehouse & Distribution'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^56') THEN 'Field Services & Building Support'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^62') THEN 'Healthcare & Clinical'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^3391') THEN 'Medical Devices & Vision Products'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^3345') THEN 'Diagnostics, Instruments & Technical Equipment'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^3254') THEN 'Biotech, Pharma & Life Sciences Manufacturing'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(5417|54138)') THEN 'Laboratory, Research & Biotechnology Services'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(31|32|33)') THEN 'Industrial Manufacturing & Fabrication'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^23') THEN 'Construction, Trades & Field Crews'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^22') THEN 'Utilities, Energy & Infrastructure'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(42|48|49)') THEN 'Warehouse, Logistics & Distribution'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^56') THEN 'Contract Field Services & Building Operations'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^62') THEN 'Healthcare, Clinics & Care Delivery'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^92') OR ic.owner_type IN ('B', 'C', 'D') THEN 'Public Sector & Municipal'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^61') THEN 'Education & Institutions'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^(44|45)') THEN 'Retail Trade'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^72') THEN 'Food Service & Hospitality'
-      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(51|52|53|54|55)') THEN 'Professional & Office Services'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^(51|52|53|54|55)') THEN 'Professional, Technical & Office Services'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^(11|21)') THEN 'Agriculture, Energy & Extraction'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^71') THEN 'Arts, Entertainment & Recreation'
       WHEN REGEXP_CONTAINS(ic.naics_code, r'^81') THEN 'Local Services & Repair'
-      ELSE 'Other / Unclassified'
+      ELSE 'Other / Mixed Operations'
     END AS industry_segment,
     CASE ic.owner_type
       WHEN 'A' THEN 'Private'
@@ -1368,6 +1526,33 @@ scored AS (
     COALESCE(vd.citation_sales_category, 'General OSHA Compliance') AS citation_sales_category,
     COALESCE(vd.citation_sales_explanation, 'OSHA cited a compliance gap; use discovery questions to map hazards and recommend the right safety eyewear program.') AS citation_sales_explanation,
     COALESCE(vd.citation_excerpt, '') AS citation_excerpt,
+    COALESCE(pfm.eye_face_violation_count, 0) AS eye_face_violation_count,
+    COALESCE(pfm.general_ppe_violation_count, 0) AS general_ppe_violation_count,
+    COALESCE(pfm.prescription_lens_violation_count, 0) AS prescription_lens_violation_count,
+    COALESCE(pfm.direct_prescription_standard_count, 0) AS direct_prescription_standard_count,
+    COALESCE(pfm.side_protection_violation_count, 0) AS side_protection_violation_count,
+    COALESCE(pfm.proper_fit_selection_violation_count, 0) AS proper_fit_selection_violation_count,
+    (
+      COALESCE(pfm.direct_prescription_standard_count, 0) > 0
+      OR COALESCE(pfm.prescription_lens_violation_count, 0) > 0
+      OR (
+        COALESCE(pfm.eye_face_violation_count, 0) > 0
+        AND COALESCE(pfm.proper_fit_selection_violation_count, 0) > 0
+        AND COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 20
+      )
+    ) AS prescription_program_signal,
+    CASE
+      WHEN (
+        COALESCE(pfm.direct_prescription_standard_count, 0) > 0
+        OR COALESCE(pfm.prescription_lens_violation_count, 0) > 0
+        OR (
+          COALESCE(pfm.eye_face_violation_count, 0) > 0
+          AND COALESCE(pfm.proper_fit_selection_violation_count, 0) > 0
+          AND COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 20
+        )
+      ) THEN 'Prescription Safety'
+      ELSE 'General PPE / Eyewear'
+    END AS program_relevance_label,
     COALESCE(vem.violation_event_count, 0) AS violation_event_count,
     vem.last_violation_event_date,
     COALESCE(ram.related_activity_count, 0) AS related_activity_count,
@@ -1505,6 +1690,9 @@ scored AS (
       + CASE WHEN COALESCE(em.emphasis_code_count, 0) > 0 THEN 5 ELSE 0 END
       + CASE WHEN COALESCE(pfm.eye_face_violation_count, 0) > 0 THEN 8 ELSE 0 END
       + CASE WHEN COALESCE(pfm.prescription_lens_violation_count, 0) > 0 THEN 6 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.direct_prescription_standard_count, 0) > 0 THEN 18 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.proper_fit_selection_violation_count, 0) > 0 THEN 8 ELSE 0 END
+      + CASE WHEN COALESCE(pfm.side_protection_violation_count, 0) > 0 THEN 4 ELSE 0 END
       + CASE WHEN COALESCE(pfm.general_ppe_violation_count, 0) > 0 THEN 4 ELSE 0 END
       + LEAST(COALESCE(pfm.ppe_focus_violation_count, 0) * 2, 8)
       + CASE
@@ -1542,6 +1730,8 @@ ranked AS (
       + CASE WHEN s.total_penalties >= 5000 THEN 1 ELSE 0 END
       + CASE WHEN s.hazard_exposure_points >= 6 THEN 1 ELSE 0 END
       + CASE WHEN s.inspections_90d >= 1 THEN 1 ELSE 0 END
+      + CASE WHEN s.prescription_program_signal THEN 1 ELSE 0 END
+      + CASE WHEN s.direct_prescription_standard_count > 0 THEN 1 ELSE 0 END
     ) AS quality_signal_count
   FROM scored s
 )
@@ -1599,7 +1789,7 @@ SELECT
   ROUND(total_penalties, 2) AS `Penalties Total USD`,
   violation_items AS `Violation Items`,
   standards_cited AS `Standards Cited`,
-  citation_sales_category AS `Citation Category`,
+  program_relevance_label AS `Program Relevance`,
   citation_sales_explanation AS `Citation Sales Explanation`,
   citation_excerpt AS `Citation Excerpt`,
   violation_event_count AS `Violation Events Total`,
@@ -1619,30 +1809,115 @@ SELECT
   company_latest_load_dt AS `Company Latest Load Timestamp`,
   followup_score AS `Follow-up Score`,
   ROUND(followup_percentile * 100, 1) AS `Follow-up Percentile`,
+  prescription_lens_violation_count AS `Prescription Signal Count`,
+  direct_prescription_standard_count AS `Direct Prescription Citation Count`,
+  eye_face_violation_count AS `Eye/Face Citation Count`,
+  general_ppe_violation_count AS `General PPE Citation Count`,
+  proper_fit_selection_violation_count AS `Fit/Selection Citation Count`,
   quality_signal_count AS `Quality Signal Count`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN 'Priority 1'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'Priority 2'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'Priority 1'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'Priority 2'
     ELSE 'Priority 3'
   END AS `Follow-up Priority`,
   CASE
-    WHEN severe_injury_indicator OR open_violation_status OR (followup_percentile >= 0.90 AND quality_signal_count >= 2) THEN 'Call within 24 hours'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'Call this week'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'Call within 24 hours'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'Call this week'
     ELSE 'Nurture this month'
   END AS `Suggested Action`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN 'High'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'Medium'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'High'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'Medium'
     ELSE 'Low'
   END AS `Buying Likelihood`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN 'RED'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN 'YELLOW'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN 'RED'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN 'YELLOW'
     ELSE 'GREEN'
   END AS `Urgency Band`,
   CASE
-    WHEN followup_percentile >= 0.90 AND quality_signal_count >= 2 THEN '#F97066'
-    WHEN followup_percentile >= 0.65 AND quality_signal_count >= 1 THEN '#F6C344'
+    WHEN prescription_program_signal
+      AND (
+        direct_prescription_standard_count > 0
+        OR open_violation_status
+        OR severe_injury_indicator
+        OR quality_signal_count >= 3
+        OR followup_percentile >= 0.85
+      ) THEN '#F97066'
+    WHEN prescription_program_signal
+      OR (
+        followup_percentile >= 0.60
+        AND quality_signal_count >= 1
+        AND (
+          eye_face_violation_count > 0
+          OR general_ppe_violation_count > 0
+          OR hazard_exposure_points >= 6
+        )
+      ) THEN '#F6C344'
     ELSE '#5BB974'
   END AS `Urgency Color`,
   CASE
@@ -1651,23 +1926,32 @@ SELECT
   END AS `Severe Incident Signal`
 FROM ranked
 WHERE industry_segment IN (
-  'Medical Devices & Diagnostics',
-  'Manufacturing & Production',
-  'Construction & Field Work',
-  'Utilities & Field Services',
-  'Warehouse & Distribution',
-  'Field Services & Building Support',
-  'Healthcare & Clinical',
+  'Medical Devices & Vision Products',
+  'Diagnostics, Instruments & Technical Equipment',
+  'Biotech, Pharma & Life Sciences Manufacturing',
+  'Laboratory, Research & Biotechnology Services',
+  'Industrial Manufacturing & Fabrication',
+  'Construction, Trades & Field Crews',
+  'Utilities, Energy & Infrastructure',
+  'Warehouse, Logistics & Distribution',
+  'Contract Field Services & Building Operations',
+  'Healthcare, Clinics & Care Delivery',
   'Public Sector & Municipal',
-  'Laboratory & Research',
   'Education & Institutions',
   'Retail Trade',
   'Food Service & Hospitality',
-  'Professional & Office Services',
+  'Professional, Technical & Office Services',
   'Agriculture, Energy & Extraction',
   'Arts, Entertainment & Recreation',
   'Local Services & Repair',
-  'Other / Unclassified'
+  'Other / Mixed Operations'
+)
+AND (
+  prescription_program_signal
+  OR eye_face_violation_count > 0
+  OR side_protection_violation_count > 0
+  OR (general_ppe_violation_count > 0 AND hazard_exposure_points >= 6)
+  OR (hazard_exposure_points >= 12 AND employee_count_estimate >= 20)
 );
 
 CREATE OR REPLACE TABLE osha_raw.sales_followup_sandiego_current AS
