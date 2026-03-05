@@ -189,7 +189,9 @@ def run_enrichment_ingest(*, config: PipelineConfig, client: DolApiClient) -> No
             allow_quoted_newlines=True,
         )
 
-    refresh_sql = config.paths.sql_refresh_file.read_text(encoding="utf-8")
+    # Use utf-8-sig so that a UTF-8 BOM at the start of the file is stripped
+    # transparently; BigQuery rejects the BOM character (\357) as illegal input.
+    refresh_sql = config.paths.sql_refresh_file.read_text(encoding="utf-8-sig")
     bq_query_sql(
         repo_root=config.paths.repo_root,
         project_id=config.project_id,
