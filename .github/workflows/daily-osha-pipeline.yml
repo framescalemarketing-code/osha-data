@@ -98,5 +98,19 @@ jobs:
             fi
           done
 
+      - name: Warm Google access token
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if gcloud auth print-access-token >/dev/null 2>&1; then
+              exit 0
+            fi
+            echo "gcloud token warmup failed on attempt ${attempt}; retrying..."
+            sleep $((attempt * 10))
+          done
+          echo "Unable to obtain Google access token after retries."
+          exit 1
+
       - name: Run full OSHA pipeline
         run: python -m pipeline.cli --verbose run-full
