@@ -34,7 +34,7 @@ jobs:
     env:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       BQ_DATASET: ${{ vars.BQ_DATASET }}
-      PIPELINE_LOG_FILE: ${{ runner.temp }}/osha-pipeline.log
+      PIPELINE_LOG_FILE: osha-pipeline.log
       SINCE_DATE: ${{ github.event.inputs.since_date }}
       API_LIMIT: ${{ github.event.inputs.api_limit }}
       API_MAX_PAGES: ${{ github.event.inputs.api_max_pages }}
@@ -124,5 +124,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: osha-pipeline-log-${{ github.run_id }}
-          path: ${{ runner.temp }}/osha-pipeline.log
+          path: osha-pipeline.log
           if-no-files-found: ignore
