@@ -19,6 +19,7 @@
  *
  * Filtering:
  * - Keep Priority 1 + Priority 2 when Follow-up Priority is present
+ * - If that yields too few rows, backfill with top-scoring Priority 3 rows
  * - Fallback: keep Follow-up Score >= minFollowupScore
  */
 
@@ -40,7 +41,8 @@ function setupBayAreaOshaViewSalesFriendly() {
     dataSourceTabName: "v_sales_followup_bayarea_v2",
     extractTabName: "v_sales_followup_bayarea_v2_extract",
     viewTabName: "BayArea_View",
-    minFollowupScore: 55
+    minFollowupScore: 55,
+    minRowsToDisplay: 100
   });
 }
 
@@ -49,7 +51,8 @@ function setupSanDiegoOshaViewSalesFriendly() {
     dataSourceTabName: "v_sales_followup_sandiego_v2",
     extractTabName: "v_sales_followup_sandiego_v2_extract",
     viewTabName: "SanDiego_View",
-    minFollowupScore: 55
+    minFollowupScore: 55,
+    minRowsToDisplay: 100
   });
 }
 
@@ -111,6 +114,7 @@ function setupRegionalOshaViewSalesFriendly_(regionConfig) {
     refreshPollMs: 3000,
     maxRowsToProcess: 50000,
     minFollowupScore: 55,
+    minRowsToDisplay: 100,
     freezePrettyHeaderRow: true,
     freezeAccountNameColumn: true,
     defaultColWidth: 140,
@@ -244,6 +248,13 @@ function setupRegionalOshaViewSalesFriendly_(regionConfig) {
           var priority = String(row[colPriority - 1] || "").trim().toLowerCase();
           return priority === "priority 1" || priority === "priority 2";
         });
+        if (filtered.length < CONFIG.minRowsToDisplay && colScore) {
+          var scoredRows = projected.filter(function(row) {
+            return parseScore_(row[colScore - 1]) >= CONFIG.minFollowupScore;
+          });
+          sortRowsForSales_(scoredRows, selectedHeaders);
+          filtered = scoredRows.slice(0, CONFIG.minRowsToDisplay);
+        }
       } else {
         if (!colScore) {
           throw new Error('Neither "Follow-up Priority" nor "Follow-up Score" was found.');
