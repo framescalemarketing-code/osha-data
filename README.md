@@ -19,6 +19,7 @@ The pipeline now runs through Python with:
 2. Bay Area inspection incremental pull + BigQuery load
 3. Enrichment endpoint pulls + BigQuery loads + v2 sales SQL refresh
 4. Public enrichment pulls (Census CBP, BLS, USAspending) + derived public signals tables
+5. FDA enrichment pulls (openFDA registration listing, 510(k), PMA) + FDA lead scoring tables
 
 Primary command:
 
@@ -32,6 +33,7 @@ python -m pipeline.cli run-full
 - `scripts/*.py`: task-oriented entrypoints for direct use and scheduler integration
 - `sql/refresh_sales_followup_v2.sql`: scoring/view refresh logic
 - `sql/refresh_public_signals.sql`: public enrichment summary tables
+- `sql/refresh_fda_followup.sql`: FDA facility lead-scoring refresh logic
 - `data/`: runtime CSV/checkpoint artifacts (gitignored except `.gitkeep`)
 
 ## Compliance and API controls
@@ -75,6 +77,7 @@ python -m pipeline.cli ingest-socal
 python -m pipeline.cli ingest-bayarea
 python -m pipeline.cli ingest-enrichment
 python -m pipeline.cli ingest-public-signals
+python -m pipeline.cli ingest-fda-signals
 ```
 
 Public signals wrapper script:
@@ -83,11 +86,24 @@ Public signals wrapper script:
 python .\scripts\run_daily_public_signals.py
 ```
 
+FDA signals wrapper script:
+
+```powershell
+python .\scripts\run_daily_fda_signals.py
+```
+
 Additional `.env` keys for public signals:
 
 - `CENSUS_API_KEY` (optional but recommended)
 - `BLS_API_KEY` (optional but recommended)
 - `CENSUS_CBP_YEAR` (optional, default `2022`)
+
+Additional `.env` keys for FDA signals:
+
+- `OPENFDA_API_KEY` (optional but strongly recommended for higher daily quota)
+- `FDA_PROJECT_ID` (optional, defaults to `PROJECT_ID`)
+- `FDA_BQ_DATASET` (optional, default `fda_raw`)
+- `FDA_LOOKBACK_YEARS` (optional, default `10`)
 
 Ad-hoc pulls:
 
@@ -114,6 +130,7 @@ It supports:
 - `DOL_API_KEY`
 - `GCP_WORKLOAD_IDENTITY_PROVIDER`
 - `GCP_SERVICE_ACCOUNT_EMAIL`
+- `OPENFDA_API_KEY` (recommended; pipeline will still run with lower openFDA quota if omitted)
 
 ### Required GitHub repository variables
 
@@ -135,6 +152,9 @@ It supports:
 
 - `ACCIDENT_API_LIMIT` (default `1000`)
 - `ACCIDENT_API_MAX_PAGES` (default `1`)
+- `FDA_PROJECT_ID` (optional; if set, FDA tables are written to this separate project)
+- `FDA_BQ_DATASET` (default `fda_raw`)
+- `FDA_LOOKBACK_YEARS` (default `10`)
 
 If required secrets/variables are missing, the workflow fails before running the pull.
 

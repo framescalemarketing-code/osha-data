@@ -11,6 +11,7 @@ from pipeline.config import PipelineConfig
 from pipeline.csv_utils import csv_data_row_count
 from pipeline.dol_api import DolApiClient
 from pipeline.extract import query_endpoint_to_csv, query_inspection_incremental
+from pipeline.fda_signals import run_fda_signals_ingest
 from pipeline.public_signals import run_public_signals_ingest
 
 
@@ -203,7 +204,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
     start = time.perf_counter()
     logging.info("OSHA full pipeline started.")
 
-    logging.info("Stage 1/4: Ingest SoCal inspection.")
+    logging.info("Stage 1/5: Ingest SoCal inspection.")
     run_inspection_ingest(
         config=config,
         client=client,
@@ -214,7 +215,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         max_pages=1,
     )
 
-    logging.info("Stage 2/4: Ingest Bay Area inspection.")
+    logging.info("Stage 2/5: Ingest Bay Area inspection.")
     run_inspection_ingest(
         config=config,
         client=client,
@@ -225,10 +226,10 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         max_pages=1,
     )
 
-    logging.info("Stage 3/4: Ingest enrichment endpoints and refresh sales outputs.")
+    logging.info("Stage 3/5: Ingest enrichment endpoints and refresh sales outputs.")
     run_enrichment_ingest(config=config, client=client)
 
-    logging.info("Stage 4/4: Pull public enrichment signals (Census, BLS, USAspending).")
+    logging.info("Stage 4/5: Pull public enrichment signals (Census, BLS, USAspending).")
     try:
         run_public_signals_ingest(config)
     except Exception as exc:
@@ -237,5 +238,14 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
             exc,
         )
 
+    logging.info("Stage 5/5: Pull FDA signals (registration + 510(k) + PMA).")
+    try:
+        run_fda_signals_ingest(config)
+    except Exception as exc:
+        logging.warning(
+            "FDA signals stage failed; continuing with OSHA/public outputs only: %s",
+            exc,
+        )
+
     elapsed = time.perf_counter() - start
-    logging.info("OSHA full pipeline finished in %.1fs.", elapsed)
+    logging.info("OSHA/FDA full pipeline finished in %.1fs.", elapsed)

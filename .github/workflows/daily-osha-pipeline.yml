@@ -46,6 +46,9 @@ jobs:
       API_BASE_BACKOFF_SECONDS: ${{ vars.API_BASE_BACKOFF_SECONDS }}
       API_MAX_REQUESTS_PER_RUN: ${{ vars.API_MAX_REQUESTS_PER_RUN }}
       API_USER_AGENT: ${{ vars.API_USER_AGENT }}
+      FDA_PROJECT_ID: ${{ vars.FDA_PROJECT_ID }}
+      FDA_BQ_DATASET: ${{ vars.FDA_BQ_DATASET }}
+      FDA_LOOKBACK_YEARS: ${{ vars.FDA_LOOKBACK_YEARS }}
       COMPLIANCE_STRICT_MODE: "true"
       DOL_API_TERMS_ACCEPTED: "true"
       DOL_API_POLICY_URL: ${{ vars.DOL_API_POLICY_URL }}
@@ -54,6 +57,7 @@ jobs:
       DOL_API_INTENDED_USE: ${{ vars.DOL_API_INTENDED_USE }}
       DATA_RETENTION_DAYS: ${{ vars.DATA_RETENTION_DAYS }}
       DOL_API_KEY: ${{ secrets.DOL_API_KEY }}
+      OPENFDA_API_KEY: ${{ secrets.OPENFDA_API_KEY }}
 
     steps:
       - name: Checkout

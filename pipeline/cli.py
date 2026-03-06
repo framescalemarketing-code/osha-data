@@ -15,6 +15,7 @@ from pipeline.logging_utils import configure_logging
 from pipeline.rate_limit import GlobalRateLimiter
 from pipeline.workflows import (
     run_enrichment_ingest,
+    run_fda_signals_ingest,
     run_full_pipeline,
     run_inspection_ingest,
     run_public_signals_ingest,
@@ -94,7 +95,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_global_args(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run_full = sub.add_parser("run-full", help="Run full 4-stage daily pipeline")
+    run_full = sub.add_parser("run-full", help="Run full 5-stage daily pipeline")
     _add_common_run_args(run_full)
 
     ingest_socal = sub.add_parser("ingest-socal", help="Run SoCal inspection ingest")
@@ -114,6 +115,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Pull Census/BLS/USAspending public signals and load BigQuery tables",
     )
     _add_common_run_args(ingest_public)
+
+    ingest_fda = sub.add_parser(
+        "ingest-fda-signals",
+        help="Pull OpenFDA registration/510k/PMA signals and refresh FDA lead tables",
+    )
+    _add_common_run_args(ingest_fda)
 
     q_inspection = sub.add_parser(
         "query-inspection",
@@ -203,6 +210,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest-public-signals":
         run_public_signals_ingest(config)
+        return 0
+
+    if args.command == "ingest-fda-signals":
+        run_fda_signals_ingest(config)
         return 0
 
     if args.command == "query-inspection":
