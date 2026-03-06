@@ -972,8 +972,13 @@ AND (
   prescription_program_signal
   OR eye_face_violation_count > 0
   OR side_protection_violation_count > 0
-  OR (general_ppe_violation_count > 0 AND hazard_exposure_points >= 6)
-  OR (hazard_exposure_points >= 12 AND employee_count_estimate >= 20)
+  OR general_ppe_violation_count > 0
+  OR hazard_exposure_points >= 6
+  OR open_violation_status
+  OR severe_injury_indicator
+  OR complaint_activity
+  OR followup_percentile >= 0.60
+  OR (followup_score >= 55 AND employee_count_estimate >= 20)
 );
 
 CREATE OR REPLACE VIEW osha_raw.v_sales_followup_bayarea_v2 AS
@@ -1950,8 +1955,13 @@ AND (
   prescription_program_signal
   OR eye_face_violation_count > 0
   OR side_protection_violation_count > 0
-  OR (general_ppe_violation_count > 0 AND hazard_exposure_points >= 6)
-  OR (hazard_exposure_points >= 12 AND employee_count_estimate >= 20)
+  OR general_ppe_violation_count > 0
+  OR hazard_exposure_points >= 6
+  OR open_violation_status
+  OR severe_injury_indicator
+  OR complaint_activity
+  OR followup_percentile >= 0.60
+  OR (followup_score >= 55 AND employee_count_estimate >= 20)
 );
 
 CREATE OR REPLACE TABLE osha_raw.sales_followup_sandiego_current AS
