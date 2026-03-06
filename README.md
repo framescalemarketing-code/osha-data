@@ -10,6 +10,8 @@ The pipeline now runs through Python with:
 - Shared API safety controls (global pacing + retries + request budgets)
 - Compliance preflight checks before any API pull
 - One daily orchestrated run for all stages
+- Unit tests in CI before the scheduled run starts
+- Pipeline log artifact upload in GitHub Actions for failure review
 
 ## Pipeline stages
 
@@ -104,6 +106,8 @@ It supports:
 
 - Daily scheduled run
 - Manual run (`Run workflow`) with optional overrides (`since_date`, `api_limit`, `api_max_pages`)
+- Unit test verification before the pipeline run
+- Uploaded pipeline log artifact on every run
 
 ### Required GitHub secrets
 
@@ -144,4 +148,11 @@ This creates/updates task `OSHA Full Pipeline Daily` and disables legacy per-ste
 
 ## Google Sheets formatting
 
-Apply presentation formatting directly in Google Sheets as needed.
+Use `scripts/google_sheets_format_sales_followup.gs` in the bound spreadsheet Apps Script project.
+
+Main entry points:
+
+- `setupAllOshaViewsSalesFriendly()`
+- `installHourlyOshaViewTriggers()`
+- `installDailyOshaViewTriggersAt9am()`
+- `installOshaViewAssets()`

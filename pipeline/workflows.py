@@ -203,7 +203,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
     start = time.perf_counter()
     logging.info("OSHA full pipeline started.")
 
-    logging.info("Stage 1/3: Ingest SoCal inspection.")
+    logging.info("Stage 1/4: Ingest SoCal inspection.")
     run_inspection_ingest(
         config=config,
         client=client,
@@ -214,7 +214,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         max_pages=1,
     )
 
-    logging.info("Stage 2/3: Ingest Bay Area inspection.")
+    logging.info("Stage 2/4: Ingest Bay Area inspection.")
     run_inspection_ingest(
         config=config,
         client=client,

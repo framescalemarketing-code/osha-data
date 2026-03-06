@@ -94,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_global_args(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run_full = sub.add_parser("run-full", help="Run full 3-stage daily pipeline")
+    run_full = sub.add_parser("run-full", help="Run full 4-stage daily pipeline")
     _add_common_run_args(run_full)
 
     ingest_socal = sub.add_parser("ingest-socal", help="Run SoCal inspection ingest")

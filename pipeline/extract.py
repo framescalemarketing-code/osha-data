@@ -179,27 +179,40 @@ def query_endpoint_to_csv(
     columns_override: list[str] | None = None,
 ) -> int:
     columns = list(columns_override) if columns_override else client.get_metadata_columns(endpoint)
-    if not append and out_csv.exists():
-        out_csv.unlink()
+    temp_csv: Path | None = None
+    target_csv = out_csv
+    if not append:
+        temp_csv = out_csv.with_name(f"{out_csv.name}.tmp")
+        if temp_csv.exists():
+            temp_csv.unlink()
+        target_csv = temp_csv
 
-    pages = client.iter_pages(
-        endpoint,
-        pagination=Pagination(limit=limit, max_pages=max_pages),
-        sort=sort,
-        sort_by=sort_by,
-        filter_object=filter_object,
-        label=f"{endpoint} data",
-    )
+    try:
+        pages = client.iter_pages(
+            endpoint,
+            pagination=Pagination(limit=limit, max_pages=max_pages),
+            sort=sort,
+            sort_by=sort_by,
+            filter_object=filter_object,
+            label=f"{endpoint} data",
+        )
 
-    total_rows = 0
-    wrote_any = False
-    for page in pages:
-        wrote = write_rows(out_csv, rows=page, columns=columns, append=True)
-        wrote_any = True
-        total_rows += wrote
+        total_rows = 0
+        wrote_any = False
+        for page in pages:
+            wrote = write_rows(target_csv, rows=page, columns=columns, append=True)
+            wrote_any = True
+            total_rows += wrote
 
-    if not wrote_any:
-        ensure_header_only(out_csv, columns)
+        if not wrote_any:
+            ensure_header_only(target_csv, columns)
 
-    logging.info("[%s] extraction complete rows=%s path=%s", endpoint, total_rows, out_csv)
-    return total_rows
+        if temp_csv is not None:
+            temp_csv.replace(out_csv)
+
+        logging.info("[%s] extraction complete rows=%s path=%s", endpoint, total_rows, out_csv)
+        return total_rows
+    except Exception:
+        if temp_csv is not None and temp_csv.exists():
+            temp_csv.unlink()
+        raise
