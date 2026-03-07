@@ -71,4 +71,15 @@ export type PublicSnapshot = {
   local_target_summary: LocalTargetSummaryItem[];
   naics_enrichment: PublicNaicsItem[];
   bls_growth: BlsGrowthItem[];
+  top_accounts?: PublicAccountItem[];
+};
+
+export type PublicAccountItem = {
+  account_name: string;
+  region: string;
+  naics2: string;
+  industry_segment: string;
+  overall_sales_priority?: string;
+  reason_to_contact?: string;
+  // company-only export: no address/contact fields (manual lookup)
 };

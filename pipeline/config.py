@@ -122,7 +122,7 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
     dotenv_path = repo_root / ".env"
     dotenv_values = load_dotenv(dotenv_path)
 
-    project_id = env_value("PROJECT_ID", dotenv_values, "osha-data-live-20260303")
+    project_id = env_value("PROJECT_ID", dotenv_values, "cold-lead-pipeline-dashboard")
     dataset = env_value("BQ_DATASET", dotenv_values, "osha_raw")
     public_project_id = env_value("PUBLIC_PROJECT_ID", dotenv_values, project_id)
     public_dataset = env_value("PUBLIC_BQ_DATASET", dotenv_values, "public_signals")

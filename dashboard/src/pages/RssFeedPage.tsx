@@ -79,9 +79,11 @@ export function RssFeedPage() {
                   <tr>
                     <th>Account</th>
                     <th>Tier</th>
+                    <th>Why</th>
                     <th>Article</th>
                     <th>Feed</th>
                     <th>Priority</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -91,6 +93,7 @@ export function RssFeedPage() {
                       <td>
                         <span className="pill">{item["Eyewear Need Tier"]}</span>
                       </td>
+                      <td>{item["Article Signal Summary"]}</td>
                       <td>
                         <a href={item["Article Link"]} target="_blank" rel="noreferrer">
                           {item["Article Title"]}
@@ -98,6 +101,43 @@ export function RssFeedPage() {
                       </td>
                       <td>{item["Feed Title"]}</td>
                       <td>{item["Article Priority"]}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={() =>
+                              window.open(
+                                `https://www.google.com/search?q=${encodeURIComponent(
+                                  item["Account Name"]
+                                )}`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            Search Web
+                          </button>
+                          <button
+                            onClick={() =>
+                              window.open(
+                                `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(
+                                  item["Account Name"]
+                                )}`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            Search LinkedIn
+                          </button>
+                          <button
+                            onClick={() =>
+                              navigator.clipboard?.writeText(
+                                item["Article Signal Summary"] || item["Article Title"] || ""
+                              )
+                            }
+                          >
+                            Copy Reason
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

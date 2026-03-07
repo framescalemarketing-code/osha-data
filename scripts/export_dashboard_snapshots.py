@@ -183,6 +183,25 @@ def main() -> int:
         """,
     )
 
+    top_accounts = _run_bq_json(
+        project_id=config.project_id,
+        repo_root=repo_root,
+        sql=f"""
+        SELECT
+          `Account Name` AS account_name,
+          `Region` AS region,
+          SUBSTR(REGEXP_REPLACE(COALESCE(`NAICS Code`, ''), r'[^0-9]', ''), 1, 2) AS naics2,
+          `Industry Segment` AS industry_segment,
+          `Overall Sales Priority` AS overall_sales_priority,
+          `Reason To Contact` AS reason_to_contact
+        FROM `{config.project_id}.{config.dataset}.eyewear_opportunity_actionable_current`
+        WHERE `Region` IN ('San Diego', 'Bay Area')
+        ORDER BY CASE WHEN `Overall Sales Priority` IN ('P0 Ideal','P1 Active','P2 Research','Priority 1') THEN 1 ELSE 2 END,
+          `Overall Sales Priority` NULLS LAST, account_name
+        LIMIT 250
+        """,
+    )
+
     dashboard_public = repo_root / "dashboard" / "public" / "data"
     _write_json(
         dashboard_public / "rss-feed.json",
@@ -202,6 +221,7 @@ def main() -> int:
           "source_freshness": public_freshness,
           "local_target_summary": local_target_summary,
           "naics_enrichment": public_naics,
+          "top_accounts": top_accounts,
           "bls_growth": bls_growth,
         },
     )

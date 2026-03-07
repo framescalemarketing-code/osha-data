@@ -1,5 +1,6 @@
 .env
 .history/
+.vite/
 data/
 !data/.gitkeep
 __pycache__/
@@ -10,4 +11,5 @@ __pycache__/
 dashboard/node_modules/
 dashboard/dist/
 dashboard-dev*.log
+package-lock.json
 

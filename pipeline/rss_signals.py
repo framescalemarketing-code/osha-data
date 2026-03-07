@@ -392,7 +392,7 @@ def _parse_timestamp(value: str) -> str:
     return parsed.astimezone(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _score_article(title: str, summary: str, text: str) -> tuple[int, int, str, str]:
+def _score_article(title: str, summary: str, text: str, spec_key: Optional[str] = None) -> tuple[int, int, str, str]:
     combined = " ".join(part for part in [title, summary] if part).lower()
     matched_direct: list[str] = []
     matched_support: list[str] = []
@@ -431,13 +431,19 @@ def _score_article(title: str, summary: str, text: str) -> tuple[int, int, str, 
     if not has_company_or_operations_context:
         return 0, 0, "Low", ""
 
+    # Company-specific feeds should get a small boost to relevance so
+    # that articles mentioning target accounts surface for outreach.
+    if spec_key and spec_key.startswith("company_news_"):
+        relevance_score += 10
+
     relevance_score = min(relevance_score, 100)
     urgency_score = min(urgency_score, 100)
 
+    # Tighter thresholds for High/Medium to better surface actionable leads
     priority = "Low"
-    if relevance_score >= 30 or (relevance_score >= 22 and urgency_score >= 10):
+    if relevance_score >= 24 or (relevance_score >= 18 and urgency_score >= 10):
         priority = "High"
-    elif relevance_score >= 16 or (relevance_score >= 12 and urgency_score >= 8):
+    elif relevance_score >= 12 or (relevance_score >= 9 and urgency_score >= 6):
         priority = "Medium"
 
     signal_summary = " | ".join([*matched_direct, *matched_support][:5])
@@ -546,7 +552,9 @@ def _build_item(
     stable_guid = guid.strip() or hashlib.sha256(
         f"{spec.key}|{link}|{title}|{published}".encode("utf-8")
     ).hexdigest()
-    relevance_score, urgency_score, priority, signal_summary = _score_article(title, summary, text)
+    relevance_score, urgency_score, priority, signal_summary = _score_article(
+        title, summary, text, spec_key=spec.key
+    )
     return RssFeedItem(
         feed_key=spec.key,
         feed_url=spec.url,

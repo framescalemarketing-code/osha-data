@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 import { loadPublicSnapshot } from "../data";
 import type { PublicSnapshot } from "../types";
@@ -30,20 +30,54 @@ export function PublicSourcesPage() {
     data: null,
     error: null,
   });
+  const [regionFilter, setRegionFilter] = useState<string>("All");
+  const [priorityFilter, setPriorityFilter] = useState<string>("All");
+  const [query, setQuery] = useState<string>("");
 
   useEffect(() => {
     void loadPublicSnapshot(setState);
   }, []);
 
+  // All hooks must run unconditionally before any early return (Rules of Hooks).
+  const data = state.data;
+
+  const regions = useMemo(
+    () => ["All", ...(data?.regions ?? [])],
+    [data],
+  );
+
+  const priorities = useMemo(() => {
+    const set = new Set<string>();
+    (data?.top_accounts ?? []).forEach(
+      (a) => a.overall_sales_priority && set.add(a.overall_sales_priority),
+    );
+    return ["All", ...Array.from(set)];
+  }, [data]);
+
+  const filteredAccounts = useMemo(() => {
+    if (!data?.top_accounts) return [];
+    return data.top_accounts.filter((acct) => {
+      if (regionFilter !== "All" && acct.region !== regionFilter) return false;
+      if (priorityFilter !== "All" && (acct.overall_sales_priority ?? "") !== priorityFilter) return false;
+      if (query) {
+        const q = query.toLowerCase();
+        return (
+          (acct.account_name ?? "").toLowerCase().includes(q) ||
+          (acct.reason_to_contact ?? "").toLowerCase().includes(q) ||
+          (acct.industry_segment ?? "").toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [data, regionFilter, priorityFilter, query]);
+
   if (state.error) {
     return <div className="panel error-panel">Public-source snapshot failed to load: {state.error}</div>;
   }
 
-  if (!state.data) {
+  if (!data) {
     return <div className="panel loading-panel">Loading public-source snapshot...</div>;
   }
-
-  const { data } = state;
 
   return (
     <section className="page-shell">
@@ -73,6 +107,104 @@ export function PublicSourcesPage() {
       </div>
 
       <div className="content-grid">
+        {data.top_accounts && data.top_accounts.length > 0 && (
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Top Accounts</h2>
+              <p>Accounts within the tracked regions prioritized for sales follow-up.</p>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+              <label>
+                Region:&nbsp;
+                <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)}>
+                  {regions.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Priority:&nbsp;
+                <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+                  {priorities.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ flex: 1 }}>
+                Search:&nbsp;
+                <input
+                  style={{ width: "100%" }}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="company, industry, or reason"
+                />
+              </label>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Region</th>
+                    <th>NAICS 2</th>
+                    <th>Industry</th>
+                    <th>Priority</th>
+                    <th>Reason To Contact</th>
+                    <th style={{ minWidth: 220 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAccounts.map((acct, idx) => (
+                    <tr key={`${acct.account_name}-${idx}`}>
+                      <td>
+                        <strong>{acct.account_name}</strong>
+                        <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+                          {acct.industry_segment}
+                        </div>
+                      </td>
+                      <td>{acct.region}</td>
+                      <td>{acct.naics2}</td>
+                      <td>{acct.industry_segment}</td>
+                      <td>{acct.overall_sales_priority ?? "-"}</td>
+                      <td>{acct.reason_to_contact ?? "-"}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => {
+                              const q = encodeURIComponent(`${acct.account_name} safety eyewear PPE`);
+                              window.open(`https://www.google.com/search?q=${q}`, "_blank");
+                            }}
+                          >
+                            Search Web
+                          </button>
+                          <button
+                            onClick={() => {
+                              const q = encodeURIComponent(acct.account_name);
+                              window.open(`https://www.linkedin.com/search/results/all/?keywords=${q}`, "_blank");
+                            }}
+                          >
+                            Search LinkedIn
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (acct.reason_to_contact) navigator.clipboard?.writeText(acct.reason_to_contact);
+                            }}
+                          >
+                            Copy Reason
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
         <section className="panel">
           <div className="panel-header">
             <h2>Source Freshness</h2>
