@@ -156,20 +156,6 @@ export function PublicSourcesPage() {
                         >
                           Find on LinkedIn
                         </button>
-                        {(acct.recent_inspection_context || acct.overall_history || acct.reason_to_contact) && (
-                          <button
-                            onClick={() => {
-                              const parts = [
-                                acct.recent_inspection_context && `Recent: ${acct.recent_inspection_context}`,
-                                acct.overall_history && `History: ${acct.overall_history}`,
-                                acct.reason_to_contact && `Contact: ${acct.reason_to_contact}`,
-                              ].filter(Boolean).join("\n");
-                              navigator.clipboard?.writeText(parts);
-                            }}
-                          >
-                            Copy
-                          </button>
-                        )}
                       </div>
                     </td>
                   </tr>

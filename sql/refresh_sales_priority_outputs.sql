@@ -943,38 +943,64 @@ SELECT
     SELECT reason
     FROM UNNEST([
       CONCAT(`Inspection Type`, ' inspection'),
-      IF(`Has Open Violations` = 'Yes', 'Open OSHA violations', NULL),
-      IF(`Severe Incident Signal` = 'Yes', 'Severe incident on record', NULL),
-      IF(`Has Complaint Signal` = 'Yes', 'Complaint-driven inspection', NULL),
+      IF(SAFE_CAST(`Open Violations Total` AS INT64) > 0,
+        CONCAT(CAST(SAFE_CAST(`Open Violations Total` AS INT64) AS STRING), ' open violation(s)'), NULL),
+      IF(`Severe Incident Signal` = 'Yes',
+        CONCAT('Severe incident', IF(COALESCE(SAFE_CAST(`Severe Injuries Total` AS INT64), 0) > 0,
+          CONCAT(' (', CAST(SAFE_CAST(`Severe Injuries Total` AS INT64) AS STRING), ' severe)'), '')), NULL),
+      IF(`Has Complaint Signal` = 'Yes', 'Complaint-driven', NULL),
+      IF(SAFE_CAST(`Penalties Total USD` AS FLOAT64) >= 1000,
+        CONCAT('$', CAST(CAST(ROUND(SAFE_CAST(`Penalties Total USD` AS FLOAT64)) AS INT64) AS STRING), ' in penalties'), NULL),
       NULLIF(`Citation Sales Category`, 'General OSHA Compliance')
     ]) reason
     WHERE reason IS NOT NULL
-    LIMIT 3
+    LIMIT 4
   ), ' | ') AS `Recent Inspection Context`,
   ARRAY_TO_STRING(ARRAY(
     SELECT reason
     FROM UNNEST([
-      IF(COALESCE(ita_eye_face_case_count_num, 0) + COALESCE(severe_eye_face_case_count_num, 0) > 0, 'Eye / face injury history', NULL),
-      IF(COALESCE(ita_prescription_case_count_num, 0) + COALESCE(severe_prescription_signal_count_num, 0) > 0 OR `Program Relevance` = 'Prescription Safety', 'Prescription safety need history', NULL),
-      IF(COALESCE(ita_chemical_case_count_num, 0) + COALESCE(severe_chemical_case_count_num, 0) + COALESCE(health_chemical_signal_count_num, 0) > 0, 'Chemical / splash exposure history', NULL),
-      IF(COALESCE(ita_dust_case_count_num, 0) + COALESCE(severe_dust_case_count_num, 0) + COALESCE(health_dust_signal_count_num, 0) > 0, 'Dust / debris exposure history', NULL),
-      IF(COALESCE(ita_impact_case_count_num, 0) + COALESCE(severe_impact_case_count_num, 0) + COALESCE(health_impact_signal_count_num, 0) > 0, 'High-impact work history', NULL),
-      IF(COALESCE(ita_uv_case_count_num, 0) + COALESCE(severe_uv_case_count_num, 0) + COALESCE(health_uv_signal_count_num, 0) > 0, 'UV / bright-light exposure history', NULL)
+      IF(COALESCE(ita_eye_face_case_count_num, 0) + COALESCE(severe_eye_face_case_count_num, 0) > 0,
+        CONCAT(CAST(COALESCE(ita_eye_face_case_count_num, 0) + COALESCE(severe_eye_face_case_count_num, 0) AS STRING), ' eye/face injury case(s)'), NULL),
+      IF(COALESCE(ita_prescription_case_count_num, 0) + COALESCE(severe_prescription_signal_count_num, 0) > 0 OR `Program Relevance` = 'Prescription Safety',
+        'Prescription safety need indicated', NULL),
+      IF(COALESCE(ita_chemical_case_count_num, 0) + COALESCE(severe_chemical_case_count_num, 0) + COALESCE(health_chemical_signal_count_num, 0) > 0,
+        CONCAT(CAST(COALESCE(ita_chemical_case_count_num, 0) + COALESCE(severe_chemical_case_count_num, 0) + COALESCE(health_chemical_signal_count_num, 0) AS STRING), ' chemical/splash signal(s)'), NULL),
+      IF(COALESCE(ita_dust_case_count_num, 0) + COALESCE(severe_dust_case_count_num, 0) + COALESCE(health_dust_signal_count_num, 0) > 0,
+        CONCAT(CAST(COALESCE(ita_dust_case_count_num, 0) + COALESCE(severe_dust_case_count_num, 0) + COALESCE(health_dust_signal_count_num, 0) AS STRING), ' dust/debris signal(s)'), NULL),
+      IF(COALESCE(ita_impact_case_count_num, 0) + COALESCE(severe_impact_case_count_num, 0) + COALESCE(health_impact_signal_count_num, 0) > 0,
+        CONCAT(CAST(COALESCE(ita_impact_case_count_num, 0) + COALESCE(severe_impact_case_count_num, 0) + COALESCE(health_impact_signal_count_num, 0) AS STRING), ' high-impact signal(s)'), NULL),
+      IF(COALESCE(ita_uv_case_count_num, 0) + COALESCE(severe_uv_case_count_num, 0) + COALESCE(health_uv_signal_count_num, 0) > 0,
+        CONCAT(CAST(COALESCE(ita_uv_case_count_num, 0) + COALESCE(severe_uv_case_count_num, 0) + COALESCE(health_uv_signal_count_num, 0) AS STRING), ' UV/bright-light signal(s)'), NULL),
+      IF(COALESCE(severe_loss_of_eye_count_num, 0) > 0, 'Loss-of-eye severe injury on record', NULL),
+      IF(COALESCE(severe_injury_count_num, 0) > 0,
+        CONCAT(CAST(COALESCE(severe_injury_count_num, 0) AS STRING), ' severe injury report(s)'), NULL)
     ]) reason
     WHERE reason IS NOT NULL
-    LIMIT 3
+    LIMIT 4
   ), ' | ') AS `Overall History`,
   ARRAY_TO_STRING(ARRAY(
     SELECT reason
     FROM UNNEST([
-      IF(estimated_employee_band IN ('50-99', '100-249', '250-499', '500+'), 'Employee count fits managed program', NULL),
-      IF(company_sites_5y_num >= 2, 'Multi-site employer', NULL),
-      IF(fda_support_score >= 55, 'FDA environment supports program fit', NULL),
-      IF(epa_support_score >= 52, 'EPA compliance context supports PPE need', NULL),
-      IF(nih_support_score >= 50, 'NIH research profile supports eyewear program fit', NULL)
+      IF(`Has Open Violations` = 'Yes', 'Active OSHA violations need resolution', NULL),
+      IF(`Severe Incident Signal` = 'Yes', 'Severe safety incident on record', NULL),
+      IF(COALESCE(severe_loss_of_eye_count_num, 0) > 0, 'Loss-of-eye injury — critical PPE gap', NULL),
+      IF(COALESCE(ita_eye_face_case_count_num, 0) + COALESCE(severe_eye_face_case_count_num, 0) > 0,
+        'Eye/face injury pattern shows PPE need', NULL),
+      IF(COALESCE(ita_chemical_case_count_num, 0) + COALESCE(severe_chemical_case_count_num, 0) + COALESCE(health_chemical_signal_count_num, 0) > 0,
+        'Chemical/splash exposure workplace', NULL),
+      IF(COALESCE(ita_impact_case_count_num, 0) + COALESCE(severe_impact_case_count_num, 0) + COALESCE(health_impact_signal_count_num, 0) > 0,
+        'High-impact work environment', NULL),
+      IF(COALESCE(ita_uv_case_count_num, 0) + COALESCE(severe_uv_case_count_num, 0) + COALESCE(health_uv_signal_count_num, 0) > 0,
+        'UV/bright-light exposure workplace', NULL),
+      NULLIF(`Citation Sales Category`, 'General OSHA Compliance'),
+      IF(fda_support_score >= 55, 'FDA-regulated — program fit', NULL),
+      IF(epa_support_score >= 52, 'EPA compliance adds PPE need', NULL),
+      IF(nih_support_score >= 50, 'NIH research program fit', NULL),
+      IF(estimated_employee_band IN ('100-249', '250-499', '500+'), 'Managed program scale', NULL),
+      IF(company_sites_5y_num >= 2, 'Multi-site employer', NULL)
     ]) reason
     WHERE reason IS NOT NULL
-    LIMIT 3
+    LIMIT 5
   ), ' | ') AS `Reason To Contact`,
   ARRAY_TO_STRING(ARRAY(
     SELECT reason
@@ -1235,7 +1261,7 @@ FROM (
     ROW_NUMBER() OVER (
       PARTITION BY
         UPPER(REGEXP_REPLACE(COALESCE(`Account Name`, ''), r'[^A-Z0-9]', '')),
-        REGEXP_EXTRACT(CAST(`Site ZIP` AS STRING), r'^(\d{5})')
+        `Region`
       ORDER BY
         CASE `Overall Sales Priority`
           WHEN 'P0 Ideal' THEN 1
