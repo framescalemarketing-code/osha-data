@@ -28,13 +28,11 @@ export default function App() {
   return (
     <HashRouter>
       <div className="app-shell">
-        <aside className="sidebar">
-          <div className="brand-block">
+        <header className="topnav">
+          <div className="brand-inline">
             <span className="brand-kicker">Cold Lead Pipeline</span>
-            <h1>Signal Dashboard</h1>
-            <p>Two focused views for current awareness and market context.</p>
+            <span className="brand-name">Signal Dashboard</span>
           </div>
-
           <nav className="nav-list">
             <NavLink
               className={({ isActive }) => `nav-link${isActive ? " nav-link-active" : ""}`}
@@ -46,7 +44,7 @@ export default function App() {
               className={({ isActive }) => `nav-link${isActive ? " nav-link-active" : ""}`}
               to="/public-sources"
             >
-              Public Sources
+              Top Accounts
             </NavLink>
             <NavLink
               className={({ isActive }) => `nav-link${isActive ? " nav-link-active" : ""}`}
@@ -55,7 +53,7 @@ export default function App() {
               Sales Hub
             </NavLink>
           </nav>
-        </aside>
+        </header>
 
         <main className="main-panel">
           <ErrorBoundary>
