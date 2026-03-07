@@ -14,10 +14,14 @@ from pipeline.http_client import RequestBudget, SafeHttpClient
 from pipeline.logging_utils import configure_logging
 from pipeline.rate_limit import GlobalRateLimiter
 from pipeline.workflows import (
+    run_ca_sos_source_ingest,
     run_enrichment_ingest,
+    run_epa_source_ingest,
     run_fda_signals_ingest,
     run_full_pipeline,
     run_inspection_ingest,
+    run_local_download_ingest,
+    run_nih_source_ingest,
     run_public_signals_ingest,
     run_preflight_checks,
 )
@@ -122,6 +126,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_common_run_args(ingest_fda)
 
+    ingest_epa = sub.add_parser(
+        "ingest-epa-signals",
+        help="Pull EPA ECHO facility signals and refresh EPA lead tables",
+    )
+    _add_common_run_args(ingest_epa)
+
+    ingest_nih = sub.add_parser(
+        "ingest-nih-signals",
+        help="Pull NIH RePORTER project signals and refresh NIH lead tables",
+    )
+    _add_common_run_args(ingest_nih)
+
+    ingest_ca_sos = sub.add_parser(
+        "ingest-ca-sos-signals",
+        help="Run California SOS entity stage if the subscription key is configured",
+    )
+    _add_common_run_args(ingest_ca_sos)
+
+    ingest_local = sub.add_parser(
+        "ingest-local-osha-downloads",
+        help="Load locally downloaded OSHA CSV files and refresh helper tables",
+    )
+    _add_common_run_args(ingest_local)
+
     q_inspection = sub.add_parser(
         "query-inspection",
         help="Pull inspection endpoint incrementally to CSV",
@@ -214,6 +242,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest-fda-signals":
         run_fda_signals_ingest(config)
+        return 0
+
+    if args.command == "ingest-epa-signals":
+        run_epa_source_ingest(config)
+        return 0
+
+    if args.command == "ingest-nih-signals":
+        run_nih_source_ingest(config)
+        return 0
+
+    if args.command == "ingest-ca-sos-signals":
+        run_ca_sos_source_ingest(config)
+        return 0
+
+    if args.command == "ingest-local-osha-downloads":
+        run_local_download_ingest(config)
         return 0
 
     if args.command == "query-inspection":

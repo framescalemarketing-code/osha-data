@@ -247,100 +247,131 @@ scored AS (
 components AS (
   SELECT
     s.*,
-    REGEXP_CONTAINS(s.text_blob, r'biotech|biopharm|biolog|genom|cell\s*therap|molecular|therapeutic|reagent') AS biotech_signal,
-    REGEXP_CONTAINS(s.text_blob, r'pharma|drug|sterile|aseptic|inject|formulation|lyophil|api\b') AS pharma_signal,
-    REGEXP_CONTAINS(s.text_blob, r'\blab\b|laborator|diagnostic|clinical chemistry|microbiology|immunology|pathology') AS lab_signal,
-    CASE
-      WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'CONTRACT MANUFACTURER') THEN 20
-      WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'MANUFACTURE MEDICAL DEVICE') THEN 25
-      WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'CONTRACT STERILIZER') THEN 16
-      WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'REPACK OR RELABEL') THEN 10
-      WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'DEVELOP SPECIFICATIONS') THEN 8
-      ELSE 4
-    END AS role_points,
+    REGEXP_CONTAINS(s.text_blob, r'uv|ultraviolet|laser|bright light|photolith|weld|welding|arc flash') AS uv_bright_light_signal,
+    REGEXP_CONTAINS(s.text_blob, r'chemical|acid|caustic|corrosive|solvent|reagent|sterile|aseptic|biohazard|disinfect') AS splash_chemical_signal,
+    REGEXP_CONTAINS(s.text_blob, r'dust|powder|particulate|debris|abrasive|grind|grinding|blast|machin|saw|cutting') AS dust_debris_signal,
+    REGEXP_CONTAINS(s.text_blob, r'impact|press|stamp|mill|machin|fabricat|tooling|metal') AS high_impact_signal,
+    REGEXP_CONTAINS(s.text_blob, r'humid|humidity|condens|washdown|fog|anti-fog|cold storage|freezer') AS fog_humidity_signal,
+    REGEXP_CONTAINS(s.text_blob, r'heat|hot|furnace|kiln|autoclave|steriliz|cold|cryo|freezer|thermal') AS extreme_temp_signal,
+    REGEXP_CONTAINS(s.text_blob, r'computer|screen|display|monitor|inspection|microscope|quality control|metrology|diagnostic|assembly') AS computer_visual_signal,
+    REGEXP_CONTAINS(s.text_blob, r'lab|laborator|diagnostic|clinical|research|inspection|microscope|cleanroom|sterile|aseptic') AS prescription_support_signal,
     LEAST(
+      20,
       CASE
-        WHEN s.class3_product_count > 0 THEN 18
-        WHEN s.class2_product_count > 0 THEN 10
+        WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'MANUFACTURE MEDICAL DEVICE') THEN 18
+        WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'CONTRACT MANUFACTURER') THEN 16
+        WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'CONTRACT STERILIZER') THEN 14
+        WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'DEVELOP SPECIFICATIONS') THEN 10
+        WHEN REGEXP_CONTAINS(UPPER(s.establishment_types), r'REPACK OR RELABEL') THEN 8
         ELSE 4
-      END + LEAST(s.product_code_count, 7),
-      25
-    ) AS device_risk_points,
-    LEAST(
-      (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'biotech|biopharm|biolog|genom|cell\s*therap|molecular|therapeutic|reagent') THEN 8 ELSE 0 END)
-      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'pharma|drug|sterile|aseptic|inject|formulation|lyophil|api\b') THEN 7 ELSE 0 END)
-      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'\blab\b|laborator|diagnostic|clinical chemistry|microbiology|immunology|pathology') THEN 7 ELSE 0 END),
-      20
-    ) AS vertical_relevance_points,
-    CASE
-      WHEN s.region_label = 'San Diego' AND REGEXP_CONTAINS(s.zip5, r'^921') THEN 15
-      WHEN s.region_label = 'San Diego' AND REGEXP_CONTAINS(s.zip5, r'^920') THEN 11
-      WHEN s.region_label = 'San Diego' AND REGEXP_CONTAINS(s.zip5, r'^919') THEN 7
-      WHEN s.region_label = 'Bay Area' AND REGEXP_CONTAINS(s.zip5, r'^(945|946|947|948)') THEN 15
-      WHEN s.region_label = 'Bay Area' AND REGEXP_CONTAINS(s.zip5, r'^(949|950|951)') THEN 11
-      WHEN s.region_label = 'Bay Area' AND REGEXP_CONTAINS(s.zip5, r'^(940|941|943|944|954)') THEN 8
-      ELSE 4
-    END AS regional_fit_points,
-    (
-      CASE WHEN s.status_code = '1' THEN 3 ELSE 0 END
+      END
       + CASE
+          WHEN REGEXP_CONTAINS(s.text_blob, r'lab|laborator|diagnostic|clinical|research') THEN 4
+          ELSE 0
+        END
+    ) AS role_points,
+    LEAST(
+      40,
+      (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'uv|ultraviolet|laser|bright light|photolith|weld|welding|arc flash') THEN 14 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'chemical|acid|caustic|corrosive|solvent|reagent|sterile|aseptic|biohazard|disinfect') THEN 16 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'dust|powder|particulate|debris|abrasive|grind|grinding|blast|machin|saw|cutting') THEN 14 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'impact|press|stamp|mill|machin|fabricat|tooling|metal') THEN 16 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'humid|humidity|condens|washdown|fog|anti-fog|cold storage|freezer') THEN 8 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'heat|hot|furnace|kiln|autoclave|steriliz|cold|cryo|freezer|thermal') THEN 8 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'computer|screen|display|monitor|inspection|microscope|quality control|metrology|diagnostic|assembly') THEN 6 ELSE 0 END)
+    ) AS environment_points,
+    LEAST(
+      25,
+      (CASE WHEN s.product_code_count >= 20 THEN 10 WHEN s.product_code_count >= 8 THEN 7 WHEN s.product_code_count >= 3 THEN 4 ELSE 1 END)
+      + (CASE WHEN s.class3_product_count > 0 THEN 6 WHEN s.class2_product_count > 0 THEN 3 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'quality control|inspection|cleanroom|sterile|aseptic|diagnostic|research') THEN 5 ELSE 0 END)
+      + (CASE WHEN s.k510_count_5y > 0 OR s.pma_count_5y > 0 THEN 4 ELSE 0 END)
+    ) AS operational_fit_points,
+    LEAST(
+      18,
+      (CASE WHEN s.k510_count_5y >= 10 THEN 8 WHEN s.k510_count_5y >= 4 THEN 5 WHEN s.k510_count_5y >= 1 THEN 2 ELSE 0 END)
+      + (CASE WHEN s.pma_count_5y >= 5 THEN 6 WHEN s.pma_count_5y >= 1 THEN 3 ELSE 0 END)
+      + (CASE WHEN s.status_code = '1' THEN 2 ELSE 0 END)
+      + (CASE
           WHEN s.reg_expiry_year >= EXTRACT(YEAR FROM CURRENT_DATE()) THEN 2
           WHEN s.reg_expiry_year = EXTRACT(YEAR FROM CURRENT_DATE()) - 1 THEN 1
           ELSE 0
-        END
-    ) AS freshness_points,
+        END)
+    ) AS regulatory_support_points,
     LEAST(
-      CASE
-        WHEN s.k510_count_5y >= 10 THEN 6
-        WHEN s.k510_count_5y >= 4 THEN 4
-        WHEN s.k510_count_5y >= 1 THEN 2
-        ELSE 0
-      END
-      + CASE
-          WHEN s.pma_count_5y >= 5 THEN 4
-          WHEN s.pma_count_5y >= 1 THEN 2
-          ELSE 0
-        END,
-      10
-    ) AS regulatory_activity_points,
+      100,
+      (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'lab|laborator|diagnostic|clinical|research|inspection|microscope|cleanroom|sterile|aseptic') THEN 40 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'computer|screen|display|monitor|inspection|microscope|quality control|metrology|diagnostic|assembly') THEN 12 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'humid|humidity|condens|washdown|fog|anti-fog|cold storage|freezer') THEN 10 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'chemical|acid|caustic|corrosive|solvent|reagent|sterile|aseptic|biohazard|disinfect') THEN 10 ELSE 0 END)
+      + (CASE WHEN REGEXP_CONTAINS(s.text_blob, r'heat|hot|furnace|kiln|autoclave|steriliz|cold|cryo|freezer|thermal') THEN 6 ELSE 0 END)
+      + (CASE WHEN s.osha_priority_rank >= 2 THEN 8 ELSE 0 END)
+      + (CASE WHEN s.osha_open_violation_signal = 1 THEN 6 ELSE 0 END)
+      + (CASE WHEN s.osha_severe_signal = 1 THEN 8 ELSE 0 END)
+    ) AS prescription_program_score,
     LEAST(
-      CASE s.osha_priority_rank
-        WHEN 3 THEN 7
-        WHEN 2 THEN 4
-        WHEN 1 THEN 2
-        ELSE 0
-      END
-      + CASE WHEN s.osha_open_violation_signal = 1 THEN 2 ELSE 0 END
-      + CASE WHEN s.osha_severe_signal = 1 THEN 2 ELSE 0 END,
-      10
+      30,
+      (CASE s.osha_priority_rank WHEN 3 THEN 18 WHEN 2 THEN 12 WHEN 1 THEN 6 ELSE 0 END)
+      + (CASE WHEN s.osha_open_violation_signal = 1 THEN 6 ELSE 0 END)
+      + (CASE WHEN s.osha_severe_signal = 1 THEN 6 ELSE 0 END)
     ) AS osha_cross_signal_points
   FROM scored s
 ),
 ranked AS (
   SELECT
     c.*,
-    LEAST(
-      c.role_points
-      + c.device_risk_points
-      + c.vertical_relevance_points
-      + c.regional_fit_points
-      + c.freshness_points
-      + c.regulatory_activity_points
-      + c.osha_cross_signal_points,
-      100
-    ) AS followup_score,
-    (
-      CASE WHEN c.role_points >= 16 THEN 1 ELSE 0 END
-      + CASE WHEN c.class3_product_count > 0 THEN 1 ELSE 0 END
-      + CASE WHEN c.regulatory_activity_points >= 4 THEN 1 ELSE 0 END
-      + CASE WHEN c.biotech_signal OR c.pharma_signal OR c.lab_signal THEN 1 ELSE 0 END
-      + CASE WHEN c.osha_priority_rank >= 2 THEN 1 ELSE 0 END
-    ) AS quality_signal_count
+    CAST(
+      ROUND(
+        LEAST(
+          100,
+          c.environment_points
+          + CAST(ROUND(c.role_points * 1.5) AS INT64)
+          + CAST(ROUND(c.regulatory_support_points * 1.5) AS INT64)
+          + c.osha_cross_signal_points
+        )
+      ) AS INT64
+    ) AS program_need_score,
+    CAST(
+      ROUND(
+        LEAST(
+          100,
+          c.role_points * 2
+          + c.operational_fit_points * 2
+          + c.regulatory_support_points
+          + c.osha_cross_signal_points * 0.5
+        )
+      ) AS INT64
+    ) AS commercial_fit_support_score,
+    CAST(
+      ROUND(
+        LEAST(
+          100,
+          (LEAST(
+            100,
+            c.environment_points
+            + CAST(ROUND(c.role_points * 1.5) AS INT64)
+            + CAST(ROUND(c.regulatory_support_points * 1.5) AS INT64)
+            + c.osha_cross_signal_points
+          ) * 0.45)
+          + (c.prescription_program_score * 0.30)
+          + (
+            LEAST(
+              100,
+              c.role_points * 2
+              + c.operational_fit_points * 2
+              + c.regulatory_support_points
+              + c.osha_cross_signal_points * 0.5
+            ) * 0.25
+          )
+        )
+      ) AS INT64
+    ) AS fda_support_score
   FROM components c
 )
 SELECT
   region_label AS `Region`,
   facility_name AS `Account Name`,
+  owner_operator_firm_name AS `Owner Operator Name`,
   address_line_1 AS `Site Address`,
   city AS `Site City`,
   state_code AS `Site State`,
@@ -359,66 +390,62 @@ SELECT
   pma_count_total AS `PMA Count Total`,
   pma_count_5y AS `PMA Count 5Y`,
   last_pma_decision_date AS `Last PMA Decision Date`,
-  CASE WHEN biotech_signal THEN 'Yes' ELSE 'No' END AS `Biotech Signal`,
-  CASE WHEN pharma_signal THEN 'Yes' ELSE 'No' END AS `Pharma Signal`,
-  CASE WHEN lab_signal THEN 'Yes' ELSE 'No' END AS `Lab Signal`,
-  role_points AS `Role Points`,
-  device_risk_points AS `Device Risk Points`,
-  vertical_relevance_points AS `Vertical Relevance Points`,
-  regional_fit_points AS `Regional Fit Points`,
-  freshness_points AS `Freshness Points`,
-  regulatory_activity_points AS `Regulatory Activity Points`,
-  osha_cross_signal_points AS `OSHA Cross-Signal Points`,
+  CASE WHEN uv_bright_light_signal THEN 'Yes' ELSE 'No' END AS `UV / Bright Light Signal`,
+  CASE WHEN splash_chemical_signal THEN 'Yes' ELSE 'No' END AS `Splash / Chemical Signal`,
+  CASE WHEN dust_debris_signal THEN 'Yes' ELSE 'No' END AS `Dust / Debris Signal`,
+  CASE WHEN high_impact_signal THEN 'Yes' ELSE 'No' END AS `High Impact Signal`,
+  CASE WHEN fog_humidity_signal THEN 'Yes' ELSE 'No' END AS `Fog / Humidity Signal`,
+  CASE WHEN extreme_temp_signal THEN 'Yes' ELSE 'No' END AS `Extreme Temperature Signal`,
+  CASE WHEN computer_visual_signal THEN 'Yes' ELSE 'No' END AS `Computer / Visual Task Signal`,
+  CASE WHEN prescription_support_signal THEN 'Yes' ELSE 'No' END AS `Prescription Program Support Signal`,
+  program_need_score AS `Program Need Score`,
+  prescription_program_score AS `Prescription Program Score`,
+  commercial_fit_support_score AS `Commercial Fit Support Score`,
   osha_priority_rank AS `Matched OSHA Priority Rank`,
   osha_followup_score AS `Matched OSHA Follow-up Score`,
-  quality_signal_count AS `Quality Signal Count`,
-  followup_score AS `Follow-up Score`,
+  fda_support_score AS `FDA Support Score`,
   CASE
-    WHEN followup_score >= 75
-      OR (role_points >= 20 AND device_risk_points >= 18 AND regulatory_activity_points >= 4)
+    WHEN fda_support_score >= 78
+      OR (prescription_program_score >= 70 AND program_need_score >= 60)
       THEN 'Priority 1'
-    WHEN followup_score >= 50
-      OR ((biotech_signal OR pharma_signal OR lab_signal) AND followup_score >= 40)
+    WHEN fda_support_score >= 55
+      OR program_need_score >= 60
+      OR prescription_program_score >= 55
       THEN 'Priority 2'
     ELSE 'Priority 3'
   END AS `Follow-up Priority`,
   CASE
-    WHEN followup_score >= 75
-      OR (role_points >= 20 AND device_risk_points >= 18 AND regulatory_activity_points >= 4)
+    WHEN fda_support_score >= 78
+      OR (prescription_program_score >= 70 AND program_need_score >= 60)
       THEN 'Call within 24 hours'
-    WHEN followup_score >= 50
-      OR ((biotech_signal OR pharma_signal OR lab_signal) AND followup_score >= 40)
+    WHEN fda_support_score >= 55
+      OR program_need_score >= 60
+      OR prescription_program_score >= 55
       THEN 'Call this week'
     ELSE 'Nurture this month'
   END AS `Suggested Action`,
   CASE
-    WHEN followup_score >= 75 THEN 'High'
-    WHEN followup_score >= 50 THEN 'Medium'
+    WHEN fda_support_score >= 78 THEN 'High'
+    WHEN fda_support_score >= 55 THEN 'Medium'
     ELSE 'Low'
   END AS `Buying Likelihood`,
   CASE
-    WHEN followup_score >= 75 THEN 'RED'
-    WHEN followup_score >= 50 THEN 'YELLOW'
+    WHEN fda_support_score >= 78 THEN 'RED'
+    WHEN fda_support_score >= 55 THEN 'YELLOW'
     ELSE 'GREEN'
   END AS `Urgency Band`,
   CASE
-    WHEN followup_score >= 75 THEN '#F97066'
-    WHEN followup_score >= 50 THEN '#F6C344'
+    WHEN fda_support_score >= 78 THEN '#F97066'
+    WHEN fda_support_score >= 55 THEN '#F6C344'
     ELSE '#5BB974'
   END AS `Urgency Color`,
   source_load_ts AS `Source Load Timestamp`
 FROM ranked
 WHERE
-  (
-    role_points >= 10
-    OR class3_product_count > 0
-    OR biotech_signal
-    OR pharma_signal
-    OR lab_signal
-    OR pma_count_5y > 0
-    OR k510_count_5y > 0
-    OR osha_priority_rank >= 1
-  );
+  program_need_score >= 40
+  OR prescription_program_score >= 45
+  OR commercial_fit_support_score >= 45
+  OR osha_priority_rank >= 1;
 
 CREATE OR REPLACE TABLE `{{FDA_PROJECT_ID}}.{{FDA_DATASET}}.sales_followup_facility_current` AS
 SELECT * FROM `{{FDA_PROJECT_ID}}.{{FDA_DATASET}}.v_sales_followup_facility_v1`;

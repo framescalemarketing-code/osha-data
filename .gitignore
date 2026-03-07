@@ -1,4 +1,5 @@
 .env
+.history/
 data/
 !data/.gitkeep
 __pycache__/

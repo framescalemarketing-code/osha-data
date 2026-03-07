@@ -13,6 +13,8 @@ from urllib.request import Request, urlopen
 
 from pipeline.bigquery import bq_load_csv, bq_query_sql
 from pipeline.config import PipelineConfig
+from pipeline.regions import BAY_AREA_ZIP_PREFIXES, SAN_DIEGO_ZIP_PREFIXES
+from pipeline.sql_refresh import run_sql_refresh
 
 
 REGISTRATION_SCHEMA = (
@@ -41,23 +43,6 @@ PMA_SCHEMA = (
     "medical_specialty:STRING,device_class:STRING,advisory_committee_description:STRING,"
     "join_key_type:STRING,join_key:STRING,source_last_updated:STRING,load_dt:STRING"
 )
-
-SAN_DIEGO_ZIP_PREFIXES = ("919", "920", "921")
-BAY_AREA_ZIP_PREFIXES = (
-    "940",
-    "941",
-    "943",
-    "944",
-    "945",
-    "946",
-    "947",
-    "948",
-    "949",
-    "950",
-    "951",
-    "954",
-)
-
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -494,7 +479,6 @@ def fetch_device_pma_ca(
         out_rows,
     )
 
-
 def run_fda_signals_ingest(config: PipelineConfig) -> None:
     data_dir = config.paths.data_dir
     reg_csv = data_dir / "fda_device_registration_raw.csv"
@@ -563,20 +547,16 @@ def run_fda_signals_ingest(config: PipelineConfig) -> None:
             schema=PMA_SCHEMA,
         )
 
-    refresh_sql_file = config.paths.sql_dir / "refresh_fda_followup.sql"
-    if refresh_sql_file.exists():
-        logging.info("Refreshing FDA lead-scoring tables...")
-        sql_text = refresh_sql_file.read_text(encoding="utf-8")
-        sql_text = (
-            sql_text.replace("{{FDA_PROJECT_ID}}", config.fda_project_id)
-            .replace("{{FDA_DATASET}}", config.fda_dataset)
-            .replace("{{OSHA_PROJECT_ID}}", config.project_id)
-            .replace("{{OSHA_DATASET}}", config.dataset)
-        )
-        bq_query_sql(
-            repo_root=config.paths.repo_root,
-            project_id=config.fda_project_id,
-            sql_text=sql_text,
-        )
-    else:
-        logging.warning("FDA refresh SQL file not found: %s", refresh_sql_file)
+    logging.info("Refreshing FDA source scoring tables...")
+    run_sql_refresh(
+        config=config,
+        sql_filename="refresh_fda_followup.sql",
+        project_id=config.fda_project_id,
+    )
+
+    logging.info("Refreshing cross-source sales priority outputs...")
+    run_sql_refresh(
+        config=config,
+        sql_filename="refresh_sales_priority_outputs.sql",
+        project_id=config.project_id,
+    )

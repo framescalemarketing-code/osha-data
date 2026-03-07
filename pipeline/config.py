@@ -86,12 +86,20 @@ class PipelineConfig:
     dataset: str
     fda_project_id: str
     fda_dataset: str
+    epa_project_id: str
+    epa_dataset: str
+    nih_project_id: str
+    nih_dataset: str
+    ca_sos_project_id: str
+    ca_sos_dataset: str
     api_key: str
     openfda_api_key: str
+    ca_sos_subscription_key: str
     census_api_key: str
     bls_api_key: str
     census_cbp_year: int
     fda_lookback_years: int
+    nih_lookback_years: int
     since_date: str
     api_limit: int
     api_max_pages: int
@@ -110,14 +118,25 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
     dataset = env_value("BQ_DATASET", dotenv_values, "osha_raw")
     fda_project_id = env_value("FDA_PROJECT_ID", dotenv_values, project_id)
     fda_dataset = env_value("FDA_BQ_DATASET", dotenv_values, "fda_raw")
+    epa_project_id = env_value("EPA_PROJECT_ID", dotenv_values, project_id)
+    epa_dataset = env_value("EPA_BQ_DATASET", dotenv_values, "epa_raw")
+    nih_project_id = env_value("NIH_PROJECT_ID", dotenv_values, project_id)
+    nih_dataset = env_value("NIH_BQ_DATASET", dotenv_values, "nih_raw")
+    ca_sos_project_id = env_value("CA_SOS_PROJECT_ID", dotenv_values, project_id)
+    ca_sos_dataset = env_value("CA_SOS_BQ_DATASET", dotenv_values, "ca_sos_raw")
     api_key = env_value("DOL_API_KEY", dotenv_values, "")
     openfda_api_key = env_value("OPENFDA_API_KEY", dotenv_values, "")
+    ca_sos_subscription_key = env_value("CA_SOS_SUBSCRIPTION_KEY", dotenv_values, "")
     census_api_key = env_value("CENSUS_API_KEY", dotenv_values, "")
     bls_api_key = env_value("BLS_API_KEY", dotenv_values, "")
     census_cbp_year = _parse_int(env_value("CENSUS_CBP_YEAR", dotenv_values, "2022"), 2022)
     fda_lookback_years = _parse_int(
         env_value("FDA_LOOKBACK_YEARS", dotenv_values, "10"),
         10,
+    )
+    nih_lookback_years = _parse_int(
+        env_value("NIH_LOOKBACK_YEARS", dotenv_values, "5"),
+        5,
     )
     since_date = env_value("SINCE_DATE", dotenv_values, default_since_date())
     api_limit = _parse_int(env_value("API_LIMIT", dotenv_values, "5000"), 5000)
@@ -210,12 +229,20 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
         dataset=dataset,
         fda_project_id=fda_project_id,
         fda_dataset=fda_dataset,
+        epa_project_id=epa_project_id,
+        epa_dataset=epa_dataset,
+        nih_project_id=nih_project_id,
+        nih_dataset=nih_dataset,
+        ca_sos_project_id=ca_sos_project_id,
+        ca_sos_dataset=ca_sos_dataset,
         api_key=api_key,
         openfda_api_key=openfda_api_key,
+        ca_sos_subscription_key=ca_sos_subscription_key,
         census_api_key=census_api_key,
         bls_api_key=bls_api_key,
         census_cbp_year=census_cbp_year,
         fda_lookback_years=fda_lookback_years,
+        nih_lookback_years=nih_lookback_years,
         since_date=since_date,
         api_limit=api_limit,
         api_max_pages=api_max_pages,

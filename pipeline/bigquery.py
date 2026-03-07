@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -42,13 +43,10 @@ def _run(
     max_attempts: int = 3,
     initial_delay_seconds: float = 5.0,
 ) -> None:
-    exec_command = command
-    if os.name == "nt":
-        exec_command = ["cmd", "/c", *command]
-
+    resolved_command = _resolve_command(command)
     for attempt in range(1, max_attempts + 1):
         proc = subprocess.run(
-            exec_command,
+            resolved_command,
             cwd=str(cwd),
             check=False,
             capture_output=True,
@@ -60,7 +58,7 @@ def _run(
 
         if attempt >= max_attempts or not _is_retryable_failure(proc.stdout, proc.stderr):
             raise BigQueryCommandError(
-                _format_command_failure(command, proc.returncode, proc.stdout, proc.stderr)
+                _format_command_failure(resolved_command, proc.returncode, proc.stdout, proc.stderr)
             )
 
         delay = initial_delay_seconds * attempt
@@ -70,9 +68,37 @@ def _run(
             attempt,
             max_attempts,
             delay,
-            " ".join(command),
+            " ".join(resolved_command),
         )
         time.sleep(delay)
+
+
+def _resolve_command(command: list[str]) -> list[str]:
+    if not command:
+        raise ValueError("Command must not be empty.")
+
+    executable = command[0]
+    if os.path.sep in executable or "/" in executable or Path(executable).suffix:
+        return command
+
+    candidates: list[str | None] = []
+    if executable == "bq":
+        candidates.append(os.environ.get("BQ_EXECUTABLE"))
+    candidates.append(shutil.which(executable))
+
+    if os.name == "nt" and executable == "bq":
+        candidates.extend(
+            [
+                shutil.which("bq.cmd"),
+                shutil.which("bq.exe"),
+                shutil.which("bq.bat"),
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate:
+            return [candidate, *command[1:]]
+    return command
 
 
 def bq_load_csv(
@@ -85,6 +111,7 @@ def bq_load_csv(
     autodetect: bool = False,
     schema: str | None = None,
     allow_quoted_newlines: bool = False,
+    field_delimiter: str | None = None,
 ) -> None:
     target = f"{project_id}:{dataset}.{table}"
     cmd = [
@@ -99,6 +126,8 @@ def bq_load_csv(
         cmd.append("--column_name_character_map=V2")
     if allow_quoted_newlines:
         cmd.append("--allow_quoted_newlines")
+    if field_delimiter:
+        cmd.append(f"--field_delimiter={field_delimiter}")
     if schema:
         cmd.append(f"--schema={schema}")
 

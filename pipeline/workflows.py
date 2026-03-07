@@ -6,12 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pipeline.bigquery import bq_load_csv, bq_query_sql
+from pipeline.ca_sos_signals import run_ca_sos_signals_ingest
 from pipeline.compliance import validate_compliance
 from pipeline.config import PipelineConfig
 from pipeline.csv_utils import csv_data_row_count
 from pipeline.dol_api import DolApiClient
+from pipeline.epa_signals import run_epa_signals_ingest
 from pipeline.extract import query_endpoint_to_csv, query_inspection_incremental
 from pipeline.fda_signals import run_fda_signals_ingest
+from pipeline.nih_signals import run_nih_signals_ingest
+from pipeline.osha_local_downloads import run_osha_local_downloads_ingest
 from pipeline.public_signals import run_public_signals_ingest
 
 
@@ -200,11 +204,27 @@ def run_enrichment_ingest(*, config: PipelineConfig, client: DolApiClient) -> No
     )
 
 
+def run_local_download_ingest(config: PipelineConfig) -> None:
+    run_osha_local_downloads_ingest(config)
+
+
+def run_epa_source_ingest(config: PipelineConfig) -> None:
+    run_epa_signals_ingest(config)
+
+
+def run_nih_source_ingest(config: PipelineConfig) -> None:
+    run_nih_signals_ingest(config)
+
+
+def run_ca_sos_source_ingest(config: PipelineConfig) -> None:
+    run_ca_sos_signals_ingest(config)
+
+
 def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
     start = time.perf_counter()
     logging.info("OSHA full pipeline started.")
 
-    logging.info("Stage 1/5: Ingest SoCal inspection.")
+    logging.info("Stage 1/8: Ingest SoCal inspection.")
     run_inspection_ingest(
         config=config,
         client=client,
@@ -215,7 +235,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         max_pages=1,
     )
 
-    logging.info("Stage 2/5: Ingest Bay Area inspection.")
+    logging.info("Stage 2/8: Ingest Bay Area inspection.")
     run_inspection_ingest(
         config=config,
         client=client,
@@ -226,10 +246,10 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         max_pages=1,
     )
 
-    logging.info("Stage 3/5: Ingest enrichment endpoints and refresh sales outputs.")
+    logging.info("Stage 3/8: Ingest enrichment endpoints and refresh sales outputs.")
     run_enrichment_ingest(config=config, client=client)
 
-    logging.info("Stage 4/5: Pull public enrichment signals (Census, BLS, USAspending).")
+    logging.info("Stage 4/8: Pull public enrichment signals (Census, BLS, USAspending).")
     try:
         run_public_signals_ingest(config)
     except Exception as exc:
@@ -238,7 +258,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
             exc,
         )
 
-    logging.info("Stage 5/5: Pull FDA signals (registration + 510(k) + PMA).")
+    logging.info("Stage 5/8: Pull FDA signals (registration + 510(k) + PMA).")
     try:
         run_fda_signals_ingest(config)
     except Exception as exc:
@@ -247,5 +267,32 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
             exc,
         )
 
+    logging.info("Stage 6/8: Pull EPA ECHO facility signals.")
+    try:
+        run_epa_signals_ingest(config)
+    except Exception as exc:
+        logging.warning(
+            "EPA signals stage failed; continuing with current outputs only: %s",
+            exc,
+        )
+
+    logging.info("Stage 7/8: Pull NIH RePORTER research signals.")
+    try:
+        run_nih_signals_ingest(config)
+    except Exception as exc:
+        logging.warning(
+            "NIH signals stage failed; continuing with current outputs only: %s",
+            exc,
+        )
+
+    logging.info("Stage 8/8: California SOS stage.")
+    try:
+        run_ca_sos_signals_ingest(config)
+    except Exception as exc:
+        logging.warning(
+            "California SOS stage failed; continuing without state-entity enrichment: %s",
+            exc,
+        )
+
     elapsed = time.perf_counter() - start
-    logging.info("OSHA/FDA full pipeline finished in %.1fs.", elapsed)
+    logging.info("OSHA multi-source sales pipeline finished in %.1fs.", elapsed)

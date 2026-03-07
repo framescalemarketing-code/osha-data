@@ -1,4 +1,4 @@
-name: OSHA Daily Pipeline
+name: OSHA Sales Pipeline
 
 on:
   workflow_dispatch:
@@ -34,7 +34,7 @@ jobs:
     env:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       BQ_DATASET: ${{ vars.BQ_DATASET }}
-      PIPELINE_LOG_FILE: osha-pipeline.log
+      PIPELINE_LOG_FILE: osha-sales-pipeline.log
       SINCE_DATE: ${{ github.event.inputs.since_date }}
       API_LIMIT: ${{ github.event.inputs.api_limit }}
       API_MAX_PAGES: ${{ github.event.inputs.api_max_pages }}
@@ -49,6 +49,14 @@ jobs:
       FDA_PROJECT_ID: ${{ vars.FDA_PROJECT_ID }}
       FDA_BQ_DATASET: ${{ vars.FDA_BQ_DATASET }}
       FDA_LOOKBACK_YEARS: ${{ vars.FDA_LOOKBACK_YEARS }}
+      EPA_PROJECT_ID: ${{ vars.EPA_PROJECT_ID }}
+      EPA_BQ_DATASET: ${{ vars.EPA_BQ_DATASET }}
+      NIH_PROJECT_ID: ${{ vars.NIH_PROJECT_ID }}
+      NIH_BQ_DATASET: ${{ vars.NIH_BQ_DATASET }}
+      NIH_LOOKBACK_YEARS: ${{ vars.NIH_LOOKBACK_YEARS }}
+      CA_SOS_PROJECT_ID: ${{ vars.CA_SOS_PROJECT_ID }}
+      CA_SOS_BQ_DATASET: ${{ vars.CA_SOS_BQ_DATASET }}
+      CA_SOS_SUBSCRIPTION_KEY: ${{ secrets.CA_SOS_SUBSCRIPTION_KEY }}
       COMPLIANCE_STRICT_MODE: "true"
       DOL_API_TERMS_ACCEPTED: "true"
       DOL_API_POLICY_URL: ${{ vars.DOL_API_POLICY_URL }}
@@ -120,13 +128,13 @@ jobs:
           echo "Unable to obtain Google access token after retries."
           exit 1
 
-      - name: Run full OSHA pipeline
+      - name: Run full sales pipeline
         run: python -m pipeline.cli --verbose run-full
 
       - name: Upload pipeline log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: osha-pipeline-log-${{ github.run_id }}
-          path: osha-pipeline.log
+          name: osha-sales-pipeline-log-${{ github.run_id }}
+          path: osha-sales-pipeline.log
           if-no-files-found: ignore
