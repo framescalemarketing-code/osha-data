@@ -942,13 +942,32 @@ SELECT
   ARRAY_TO_STRING(ARRAY(
     SELECT reason
     FROM UNNEST([
-      IF(COALESCE(ita_eye_face_case_count_num, 0) + COALESCE(severe_eye_face_case_count_num, 0) > 0, 'Eye / face injury evidence', NULL),
-      IF(COALESCE(ita_prescription_case_count_num, 0) + COALESCE(severe_prescription_signal_count_num, 0) > 0 OR `Program Relevance` = 'Prescription Safety', 'Prescription safety eyewear need indicated', NULL),
-      IF(COALESCE(ita_chemical_case_count_num, 0) + COALESCE(severe_chemical_case_count_num, 0) + COALESCE(health_chemical_signal_count_num, 0) > 0, 'Chemical / splash exposure signals', NULL),
-      IF(COALESCE(ita_dust_case_count_num, 0) + COALESCE(severe_dust_case_count_num, 0) + COALESCE(health_dust_signal_count_num, 0) > 0, 'Dust / debris exposure signals', NULL),
-      IF(COALESCE(ita_impact_case_count_num, 0) + COALESCE(severe_impact_case_count_num, 0) + COALESCE(health_impact_signal_count_num, 0) > 0, 'High-impact work environment', NULL),
-      IF(COALESCE(ita_uv_case_count_num, 0) + COALESCE(severe_uv_case_count_num, 0) + COALESCE(health_uv_signal_count_num, 0) > 0, 'UV / bright-light exposure signals', NULL),
-      IF(estimated_employee_band IN ('50-99', '100-249', '250-499', '500+'), 'Employee count likely fits managed program', NULL),
+      CONCAT(`Inspection Type`, ' inspection'),
+      IF(`Has Open Violations` = 'Yes', 'Open OSHA violations', NULL),
+      IF(`Severe Incident Signal` = 'Yes', 'Severe incident on record', NULL),
+      IF(`Has Complaint Signal` = 'Yes', 'Complaint-driven inspection', NULL),
+      NULLIF(`Citation Sales Category`, 'General OSHA Compliance')
+    ]) reason
+    WHERE reason IS NOT NULL
+    LIMIT 3
+  ), ' | ') AS `Recent Inspection Context`,
+  ARRAY_TO_STRING(ARRAY(
+    SELECT reason
+    FROM UNNEST([
+      IF(COALESCE(ita_eye_face_case_count_num, 0) + COALESCE(severe_eye_face_case_count_num, 0) > 0, 'Eye / face injury history', NULL),
+      IF(COALESCE(ita_prescription_case_count_num, 0) + COALESCE(severe_prescription_signal_count_num, 0) > 0 OR `Program Relevance` = 'Prescription Safety', 'Prescription safety need history', NULL),
+      IF(COALESCE(ita_chemical_case_count_num, 0) + COALESCE(severe_chemical_case_count_num, 0) + COALESCE(health_chemical_signal_count_num, 0) > 0, 'Chemical / splash exposure history', NULL),
+      IF(COALESCE(ita_dust_case_count_num, 0) + COALESCE(severe_dust_case_count_num, 0) + COALESCE(health_dust_signal_count_num, 0) > 0, 'Dust / debris exposure history', NULL),
+      IF(COALESCE(ita_impact_case_count_num, 0) + COALESCE(severe_impact_case_count_num, 0) + COALESCE(health_impact_signal_count_num, 0) > 0, 'High-impact work history', NULL),
+      IF(COALESCE(ita_uv_case_count_num, 0) + COALESCE(severe_uv_case_count_num, 0) + COALESCE(health_uv_signal_count_num, 0) > 0, 'UV / bright-light exposure history', NULL)
+    ]) reason
+    WHERE reason IS NOT NULL
+    LIMIT 3
+  ), ' | ') AS `Overall History`,
+  ARRAY_TO_STRING(ARRAY(
+    SELECT reason
+    FROM UNNEST([
+      IF(estimated_employee_band IN ('50-99', '100-249', '250-499', '500+'), 'Employee count fits managed program', NULL),
       IF(company_sites_5y_num >= 2, 'Multi-site employer', NULL),
       IF(fda_support_score >= 55, 'FDA environment supports program fit', NULL),
       IF(epa_support_score >= 52, 'EPA compliance context supports PPE need', NULL),
@@ -1151,6 +1170,8 @@ SELECT
   eyewear_evidence_summary AS `Eyewear Evidence Summary`,
   `Overall Sales Priority`,
   `Should Look At Now`,
+  `Recent Inspection Context`,
+  `Overall History`,
   `Reason To Contact`,
   `Reason To Call Now`,
   `Why Fit`,
@@ -1208,9 +1229,27 @@ SELECT
 FROM classified;
 
 CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_actionable_current` AS
-SELECT *
-FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
-WHERE `Eyewear Need Tier` IN ('Direct Need', 'Probable Need');
+SELECT * EXCEPT(company_dedup_rn)
+FROM (
+  SELECT *,
+    ROW_NUMBER() OVER (
+      PARTITION BY
+        UPPER(REGEXP_REPLACE(COALESCE(`Account Name`, ''), r'[^A-Z0-9]', '')),
+        REGEXP_EXTRACT(CAST(`Site ZIP` AS STRING), r'^(\d{5})')
+      ORDER BY
+        CASE `Overall Sales Priority`
+          WHEN 'P0 Ideal' THEN 1
+          WHEN 'P1 Active' THEN 2
+          WHEN 'P2 Research' THEN 3
+          ELSE 4
+        END,
+        `Overall Sales Score` DESC,
+        `Latest Inspection ID` DESC
+    ) AS company_dedup_rn
+  FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
+  WHERE `Eyewear Need Tier` IN ('Direct Need', 'Probable Need')
+)
+WHERE company_dedup_rn = 1;
 
 CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_call_now_sandiego_current` AS
 SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_call_now_current`

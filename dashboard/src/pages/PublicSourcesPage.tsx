@@ -46,6 +46,8 @@ export function PublicSourcesPage() {
         const q = query.toLowerCase();
         return (
           (acct.account_name ?? "").toLowerCase().includes(q) ||
+          (acct.recent_inspection_context ?? "").toLowerCase().includes(q) ||
+          (acct.overall_history ?? "").toLowerCase().includes(q) ||
           (acct.reason_to_contact ?? "").toLowerCase().includes(q) ||
           (acct.industry_segment ?? "").toLowerCase().includes(q)
         );
@@ -110,6 +112,8 @@ export function PublicSourcesPage() {
                   <th>Account</th>
                   <th>Region</th>
                   <th>Priority</th>
+                  <th>Recent Inspection</th>
+                  <th>Overall History</th>
                   <th>Reason To Contact</th>
                   <th>Actions</th>
                 </tr>
@@ -131,7 +135,9 @@ export function PublicSourcesPage() {
                         ? <span className="pill">{acct.overall_sales_priority}</span>
                         : <span style={{ color: "var(--muted)" }}>&mdash;</span>}
                     </td>
-                    <td style={{ maxWidth: 360 }}>{acct.reason_to_contact ?? "-"}</td>
+                    <td style={{ maxWidth: 280 }}>{acct.recent_inspection_context ?? "-"}</td>
+                    <td style={{ maxWidth: 280 }}>{acct.overall_history ?? "-"}</td>
+                    <td style={{ maxWidth: 280 }}>{acct.reason_to_contact ?? "-"}</td>
                     <td>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         <button
@@ -144,15 +150,22 @@ export function PublicSourcesPage() {
                         </button>
                         <button
                           onClick={() => {
-                            const q = encodeURIComponent(acct.account_name);
-                            window.open(`https://www.linkedin.com/search/results/all/?keywords=${q}`, "_blank");
+                            const q = encodeURIComponent(`site:linkedin.com/company "${acct.account_name}"`);
+                            window.open(`https://www.google.com/search?q=${q}`, "_blank");
                           }}
                         >
-                          LinkedIn
+                          Find on LinkedIn
                         </button>
-                        {acct.reason_to_contact && (
+                        {(acct.recent_inspection_context || acct.overall_history || acct.reason_to_contact) && (
                           <button
-                            onClick={() => navigator.clipboard?.writeText(acct.reason_to_contact!)}
+                            onClick={() => {
+                              const parts = [
+                                acct.recent_inspection_context && `Recent: ${acct.recent_inspection_context}`,
+                                acct.overall_history && `History: ${acct.overall_history}`,
+                                acct.reason_to_contact && `Contact: ${acct.reason_to_contact}`,
+                              ].filter(Boolean).join("\n");
+                              navigator.clipboard?.writeText(parts);
+                            }}
                           >
                             Copy
                           </button>

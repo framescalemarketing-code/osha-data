@@ -118,14 +118,14 @@ export function RssFeedPage() {
                           <button
                             onClick={() =>
                               window.open(
-                                `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(
-                                  item["Account Name"]
+                                `https://www.google.com/search?q=${encodeURIComponent(
+                                  `site:linkedin.com/company "${item["Account Name"]}"`
                                 )}`,
                                 "_blank"
                               )
                             }
                           >
-                            Search LinkedIn
+                            Find on LinkedIn
                           </button>
                           <button
                             onClick={() =>

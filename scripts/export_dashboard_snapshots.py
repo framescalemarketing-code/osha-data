@@ -193,6 +193,8 @@ def main() -> int:
           SUBSTR(REGEXP_REPLACE(COALESCE(`NAICS Code`, ''), r'[^0-9]', ''), 1, 2) AS naics2,
           `Industry Segment` AS industry_segment,
           `Overall Sales Priority` AS overall_sales_priority,
+          `Recent Inspection Context` AS recent_inspection_context,
+          `Overall History` AS overall_history,
           `Reason To Contact` AS reason_to_contact
         FROM `{config.project_id}.{config.dataset}.eyewear_opportunity_actionable_current`
         WHERE `Region` IN ('San Diego', 'Bay Area')

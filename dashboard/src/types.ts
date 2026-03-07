@@ -80,6 +80,7 @@ export type PublicAccountItem = {
   naics2: string;
   industry_segment: string;
   overall_sales_priority?: string;
+  recent_inspection_context?: string;
+  overall_history?: string;
   reason_to_contact?: string;
-  // company-only export: no address/contact fields (manual lookup)
 };
