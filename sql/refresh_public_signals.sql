@@ -1,4 +1,4 @@
-CREATE OR REPLACE TABLE osha_raw.census_cbp_ca_naics2_current AS
+CREATE OR REPLACE TABLE `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.census_cbp_ca_naics2_current` AS
 WITH base AS (
   SELECT
     SUBSTR(REGEXP_REPLACE(naics2017, r'[^0-9]', ''), 1, 2) AS naics2,
@@ -6,7 +6,7 @@ WITH base AS (
     SAFE_CAST(emp AS FLOAT64) AS emp_num,
     SAFE_CAST(payann AS FLOAT64) AS payann_num,
     SAFE_CAST(load_dt AS TIMESTAMP) AS load_ts
-  FROM osha_raw.census_cbp_ca_raw
+  FROM `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.census_cbp_ca_raw`
   WHERE REGEXP_CONTAINS(naics2017, r'^\d{2}$')
 )
 SELECT
@@ -18,13 +18,13 @@ SELECT
 FROM base
 GROUP BY 1;
 
-CREATE OR REPLACE TABLE osha_raw.usaspending_naics2_ca_current AS
+CREATE OR REPLACE TABLE `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.usaspending_naics2_ca_current` AS
 WITH base AS (
   SELECT
     SUBSTR(REGEXP_REPLACE(naics_code, r'[^0-9]', ''), 1, 2) AS naics2,
     SAFE_CAST(amount AS FLOAT64) AS amount_num,
     SAFE_CAST(load_dt AS TIMESTAMP) AS load_ts
-  FROM osha_raw.usaspending_naics_ca_raw
+  FROM `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.usaspending_naics_ca_raw`
   WHERE REGEXP_CONTAINS(naics_code, r'^\d{2,6}$')
 )
 SELECT
@@ -34,7 +34,7 @@ SELECT
 FROM base
 GROUP BY 1;
 
-CREATE OR REPLACE TABLE osha_raw.bls_segment_growth_ca_current AS
+CREATE OR REPLACE TABLE `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.bls_segment_growth_ca_current` AS
 WITH ordered AS (
   SELECT
     segment,
@@ -45,7 +45,7 @@ WITH ordered AS (
       PARTITION BY segment
       ORDER BY SAFE_CAST(year AS INT64) DESC, SAFE_CAST(SUBSTR(period, 2) AS INT64) DESC
     ) AS rn
-  FROM osha_raw.bls_ca_series_raw
+  FROM `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.bls_ca_series_raw`
   WHERE REGEXP_CONTAINS(period, r'^M\d{2}$')
 )
 SELECT
@@ -60,7 +60,7 @@ LEFT JOIN ordered AS prev
  AND prev.rn = 13
 WHERE latest.rn = 1;
 
-CREATE OR REPLACE TABLE osha_raw.public_enrichment_naics2_current AS
+CREATE OR REPLACE TABLE `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.public_enrichment_naics2_current` AS
 WITH combined AS (
   SELECT
     COALESCE(c.naics2, u.naics2) AS naics2,
@@ -69,8 +69,8 @@ WITH combined AS (
     c.annual_payroll_ca,
     u.federal_amount_ca,
     GREATEST(COALESCE(c.source_load_ts, TIMESTAMP '1970-01-01'), COALESCE(u.source_load_ts, TIMESTAMP '1970-01-01')) AS source_load_ts
-  FROM osha_raw.census_cbp_ca_naics2_current AS c
-  FULL OUTER JOIN osha_raw.usaspending_naics2_ca_current AS u
+  FROM `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.census_cbp_ca_naics2_current` AS c
+  FULL OUTER JOIN `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.usaspending_naics2_ca_current` AS u
     ON c.naics2 = u.naics2
 )
 SELECT

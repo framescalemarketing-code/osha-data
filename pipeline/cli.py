@@ -23,6 +23,7 @@ from pipeline.workflows import (
     run_local_download_ingest,
     run_nih_source_ingest,
     run_public_signals_ingest,
+    run_rss_signals_ingest,
     run_preflight_checks,
 )
 
@@ -144,6 +145,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_common_run_args(ingest_ca_sos)
 
+    ingest_rss = sub.add_parser(
+        "ingest-rss-signals",
+        help="Pull RSS safety/news feeds and refresh the RSS company watchlist tables",
+    )
+    _add_common_run_args(ingest_rss)
+
     ingest_local = sub.add_parser(
         "ingest-local-osha-downloads",
         help="Load locally downloaded OSHA CSV files and refresh helper tables",
@@ -254,6 +261,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest-ca-sos-signals":
         run_ca_sos_source_ingest(config)
+        return 0
+
+    if args.command == "ingest-rss-signals":
+        run_rss_signals_ingest(config)
         return 0
 
     if args.command == "ingest-local-osha-downloads":

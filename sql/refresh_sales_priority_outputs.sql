@@ -76,13 +76,13 @@ BEGIN
           ARRAY(
             SELECT signal
             FROM UNNEST([
-              IF(`UV / Bright Light Signal` = 'Yes', 'UV / Bright Light', NULL),
-              IF(`Splash / Chemical Signal` = 'Yes', 'Splash / Chemical', NULL),
-              IF(`Dust / Debris Signal` = 'Yes', 'Dust / Debris', NULL),
+              IF(`UV Bright Light Signal` = 'Yes', 'UV / Bright Light', NULL),
+              IF(`Splash Chemical Signal` = 'Yes', 'Splash / Chemical', NULL),
+              IF(`Dust Debris Signal` = 'Yes', 'Dust / Debris', NULL),
               IF(`High Impact Signal` = 'Yes', 'High Impact', NULL),
-              IF(`Fog / Humidity Signal` = 'Yes', 'Fog / Humidity', NULL),
+              IF(`Fog Humidity Signal` = 'Yes', 'Fog / Humidity', NULL),
               IF(`Extreme Temperature Signal` = 'Yes', 'Extreme Temperature', NULL),
-              IF(`Computer / Visual Task Signal` = 'Yes', 'Computer / Visual Task', NULL),
+              IF(`Computer Visual Task Signal` = 'Yes', 'Computer / Visual Task', NULL),
               IF(`Prescription Program Support Signal` = 'Yes', 'Prescription Program Support', NULL)
             ]) signal
             WHERE signal IS NOT NULL
@@ -1022,6 +1022,12 @@ SELECT
   `Direct Prescription Citation Count`,
   `Eye Face Citation Count`,
   `General PPE Citation Count`,
+  `Fit Selection Citation Count`,
+  ita_eye_face_case_count_num AS `ITA Eye Face Case Count`,
+  ita_prescription_case_count_num AS `ITA Prescription Case Count`,
+  severe_eye_face_case_count_num AS `Severe Eye Face Case Count`,
+  severe_loss_of_eye_count_num AS `Severe Loss Of Eye Count`,
+  severe_injury_count_num AS `Severe Injury Count`,
   `Company Sites 5Y`,
   `Employee Count Estimate`,
   `CA Employees Signal`,
@@ -1029,10 +1035,195 @@ SELECT
 FROM deduped
 WHERE overall_sales_score >= 36;
 
+CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current` AS
+WITH base AS (
+  SELECT
+    s.*,
+    CASE
+      WHEN COALESCE(`Direct Prescription Citation Count`, 0) > 0
+        OR COALESCE(`Prescription Signal Count`, 0) > 0
+        OR COALESCE(`Eye Face Citation Count`, 0) > 0
+        OR COALESCE(`Fit Selection Citation Count`, 0) > 0
+        OR COALESCE(`ITA Eye Face Case Count`, 0) > 0
+        OR COALESCE(`ITA Prescription Case Count`, 0) > 0
+        OR COALESCE(`Severe Eye Face Case Count`, 0) > 0
+        OR COALESCE(`Severe Loss Of Eye Count`, 0) > 0
+      THEN 'Direct Need'
+      WHEN COALESCE(`General PPE Citation Count`, 0) > 0
+        OR COALESCE(`OSHA Download Program Support Score`, 0) >= 10
+        OR COALESCE(`OSHA Download Prescription Support Score`, 0) >= 6
+        OR (
+          `Severe Incident Signal` = 'Yes'
+          AND COALESCE(`OSHA Download Program Support Score`, 0) >= 8
+        )
+        OR (
+          COALESCE(`Matched Source Count`, 0) > 0
+          AND (
+            COALESCE(`FDA Signal Summary`, '') != ''
+            OR COALESCE(`EPA Signal Summary`, '') != ''
+            OR COALESCE(`NIH Signal Summary`, '') != ''
+          )
+        )
+      THEN 'Probable Need'
+      ELSE 'Fit Only'
+    END AS eyewear_need_tier,
+    CAST(
+      ROUND(
+        LEAST(
+          100,
+          CASE WHEN COALESCE(`Direct Prescription Citation Count`, 0) > 0 THEN 34 ELSE 0 END
+          + CASE WHEN COALESCE(`Prescription Signal Count`, 0) > 0 THEN 22 ELSE 0 END
+          + CASE WHEN COALESCE(`Eye Face Citation Count`, 0) > 0 THEN 18 ELSE 0 END
+          + CASE WHEN COALESCE(`Fit Selection Citation Count`, 0) > 0 THEN 16 ELSE 0 END
+          + CASE WHEN COALESCE(`ITA Eye Face Case Count`, 0) > 0 THEN 18 ELSE 0 END
+          + CASE WHEN COALESCE(`ITA Prescription Case Count`, 0) > 0 THEN 16 ELSE 0 END
+          + CASE WHEN COALESCE(`Severe Eye Face Case Count`, 0) > 0 THEN 20 ELSE 0 END
+          + CASE WHEN COALESCE(`Severe Loss Of Eye Count`, 0) > 0 THEN 26 ELSE 0 END
+          + LEAST(COALESCE(`OSHA Download Prescription Support Score`, 0), 12)
+          + LEAST(COALESCE(`OSHA Download Program Support Score`, 0), 10)
+          + CASE WHEN `Severe Incident Signal` = 'Yes' THEN 8 ELSE 0 END
+          + CASE WHEN `Has Open Violations` = 'Yes' THEN 6 ELSE 0 END
+          + CASE WHEN COALESCE(`Matched Source Count`, 0) > 0 THEN 4 ELSE 0 END
+        )
+      ) AS INT64
+    ) AS eyewear_evidence_score
+  FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_call_now_current` s
+),
+classified AS (
+  SELECT
+    b.*,
+    CASE
+      WHEN eyewear_need_tier = 'Direct Need'
+        AND (
+          `Overall Sales Priority` IN ('P0 Ideal', 'P1 Active', 'P2 Research')
+          OR `Severe Incident Signal` = 'Yes'
+          OR `Has Open Violations` = 'Yes'
+          OR eyewear_evidence_score >= 24
+        )
+      THEN 'Call Now'
+      WHEN eyewear_need_tier IN ('Direct Need', 'Probable Need')
+        AND `Overall Sales Priority` IN ('P0 Ideal', 'P1 Active', 'P2 Research')
+      THEN 'Research Then Call'
+      ELSE 'Monitor / Nurture'
+    END AS eyewear_outreach_recommendation,
+    ARRAY_TO_STRING(
+      ARRAY(
+        SELECT reason
+        FROM UNNEST([
+          IF(COALESCE(`Direct Prescription Citation Count`, 0) > 0, 'Direct prescription-related citation present', NULL),
+          IF(COALESCE(`Prescription Signal Count`, 0) > 0, 'Prescription program signal present in OSHA inspection data', NULL),
+          IF(COALESCE(`Eye Face Citation Count`, 0) > 0, 'Eye / face citation present in OSHA inspection data', NULL),
+          IF(COALESCE(`Fit Selection Citation Count`, 0) > 0, 'Fit / selection citation suggests eyewear program gap', NULL),
+          IF(COALESCE(`ITA Eye Face Case Count`, 0) > 0, 'ITA downloadable data includes eye / face injury cases', NULL),
+          IF(COALESCE(`ITA Prescription Case Count`, 0) > 0, 'ITA downloadable data includes prescription-related cases', NULL),
+          IF(COALESCE(`Severe Eye Face Case Count`, 0) > 0, 'Severe injury reports include eye / face cases', NULL),
+          IF(COALESCE(`Severe Loss Of Eye Count`, 0) > 0, 'Severe injury reports include loss-of-eye cases', NULL),
+          IF(COALESCE(`OSHA Download Prescription Support Score`, 0) >= 10, 'Downloadable OSHA records show strong prescription-support evidence', NULL),
+          IF(COALESCE(`OSHA Download Program Support Score`, 0) >= 10, 'Downloadable OSHA records show probable eye / face hazard exposure', NULL),
+          IF(`Severe Incident Signal` = 'Yes', 'Severe incident context raises urgency', NULL),
+          IF(`Has Open Violations` = 'Yes', 'Open OSHA violations remain unresolved', NULL),
+          IF(COALESCE(`FDA Signal Summary`, '') != '', CONCAT('FDA signals: ', `FDA Signal Summary`), NULL),
+          IF(COALESCE(`EPA Signal Summary`, '') != '', CONCAT('EPA signals: ', `EPA Signal Summary`), NULL),
+          IF(COALESCE(`NIH Signal Summary`, '') != '', CONCAT('NIH signals: ', `NIH Signal Summary`), NULL)
+        ]) reason
+        WHERE reason IS NOT NULL
+        LIMIT 4
+      ),
+      ' | '
+    ) AS eyewear_evidence_summary
+  FROM base b
+)
+SELECT
+  `Region`,
+  `Account Name`,
+  `Site Address`,
+  `Site City`,
+  `Site State`,
+  `Site ZIP`,
+  `NAICS Code`,
+  `Industry Segment`,
+  `Ownership Type`,
+  `Latest Inspection ID`,
+  `Program Relevance`,
+  eyewear_need_tier AS `Eyewear Need Tier`,
+  eyewear_outreach_recommendation AS `Eyewear Outreach Recommendation`,
+  eyewear_evidence_score AS `Eyewear Evidence Score`,
+  eyewear_evidence_summary AS `Eyewear Evidence Summary`,
+  `Overall Sales Priority`,
+  `Should Look At Now`,
+  `Reason To Contact`,
+  `Reason To Call Now`,
+  `Why Fit`,
+  `Why Now`,
+  `OSHA Follow-up Priority`,
+  `OSHA Suggested Action`,
+  `OSHA Follow-up Score`,
+  `Program Need Score`,
+  `Prescription Program Score`,
+  `Urgency Score`,
+  `Overall Sales Score`,
+  `Matched Sources`,
+  `Matched Source Count`,
+  `Match Confidence`,
+  `OSHA Download Match Rule`,
+  `OSHA Download Program Support Score`,
+  `OSHA Download Prescription Support Score`,
+  `OSHA Download Urgency Support Score`,
+  `OSHA Download Fit Support Score`,
+  `Has Open Violations`,
+  `Severe Incident Signal`,
+  `Prescription Signal Count`,
+  `Direct Prescription Citation Count`,
+  `Eye Face Citation Count`,
+  `General PPE Citation Count`,
+  `Fit Selection Citation Count`,
+  `ITA Eye Face Case Count`,
+  `ITA Prescription Case Count`,
+  `Severe Eye Face Case Count`,
+  `Severe Loss Of Eye Count`,
+  `Severe Injury Count`,
+  `FDA Account Name`,
+  `FDA Owner Operator Name`,
+  `FDA Follow-up Priority`,
+  `FDA Suggested Action`,
+  `FDA Signal Summary`,
+  `EPA Account Name`,
+  `EPA Follow-up Priority`,
+  `EPA Suggested Action`,
+  `EPA Signal Summary`,
+  `NIH Account Name`,
+  `NIH Follow-up Priority`,
+  `NIH Suggested Action`,
+  `NIH Signal Summary`,
+  `Estimated Employee Band`,
+  `Employee Estimate Confidence`,
+  `Estimated Revenue Band`,
+  `Revenue Estimate Confidence`,
+  `Commercial Fit Score`,
+  `ICP Fit Band`,
+  `Company Sites 5Y`,
+  `Employee Count Estimate`,
+  `CA Employees Signal`,
+  `CA Federal Spend Signal`
+FROM classified;
+
+CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_actionable_current` AS
+SELECT *
+FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
+WHERE `Eyewear Need Tier` IN ('Direct Need', 'Probable Need');
+
 CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_call_now_sandiego_current` AS
 SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_call_now_current`
 WHERE `Region` = 'San Diego';
 
 CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_call_now_bayarea_current` AS
 SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_call_now_current`
+WHERE `Region` = 'Bay Area';
+
+CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_sandiego_current` AS
+SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
+WHERE `Region` = 'San Diego';
+
+CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_bayarea_current` AS
+SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
 WHERE `Region` = 'Bay Area';

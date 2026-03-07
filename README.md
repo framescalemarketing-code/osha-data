@@ -22,7 +22,8 @@ The pipeline now runs through Python with:
 5. FDA enrichment pulls (openFDA registration listing, 510(k), PMA) + eyewear-support scoring tables
 6. EPA enrichment pulls (ECHO facility signals) + compliance/environment scoring tables
 7. NIH enrichment pulls (RePORTER project signals) + research/lab scoring tables
-8. Cross-source sales priority outputs for action queues and call review
+8. RSS current-awareness pulls + article/company watchlist tables
+9. Cross-source sales priority outputs for action queues and call review
 
 Primary command:
 
@@ -39,6 +40,7 @@ python -m pipeline.cli run-full
 - `sql/refresh_fda_followup.sql`: FDA facility eyewear-support scoring refresh logic
 - `sql/refresh_epa_followup.sql`: EPA facility support scoring refresh logic
 - `sql/refresh_nih_followup.sql`: NIH research organization support scoring refresh logic
+- `sql/refresh_rss_signals.sql`: RSS article normalization + company watchlist refresh logic
 - `sql/refresh_sales_priority_outputs.sql`: cross-source match + final sales priority outputs
 - `data/`: runtime CSV/checkpoint artifacts (gitignored except `.gitkeep`)
 
@@ -60,6 +62,9 @@ See `COMPLIANCE.md` for full details. Key controls:
 - `osha_raw.v_sales_followup_bayarea_v2`
 - `osha_raw.sales_followup_sandiego_current`
 - `osha_raw.sales_followup_bayarea_current`
+- `osha_raw.sales_call_now_current`
+- `osha_raw.eyewear_opportunity_current`
+- `osha_raw.eyewear_opportunity_actionable_current`
 
 ## One-time setup
 
@@ -87,6 +92,7 @@ python -m pipeline.cli ingest-fda-signals
 python -m pipeline.cli ingest-epa-signals
 python -m pipeline.cli ingest-nih-signals
 python -m pipeline.cli ingest-ca-sos-signals
+python -m pipeline.cli ingest-rss-signals
 python -m pipeline.cli ingest-local-osha-downloads
 ```
 
@@ -114,6 +120,12 @@ NIH signals wrapper script:
 python .\scripts\run_daily_nih_signals.py
 ```
 
+RSS signals wrapper script:
+
+```powershell
+python .\scripts\run_daily_rss_signals.py
+```
+
 Manual local OSHA download ingest:
 
 ```powershell
@@ -124,6 +136,8 @@ This stage reads locally downloaded OSHA files from `data/downloads/osha/`, load
 
 Additional `.env` keys for public signals:
 
+- `PUBLIC_PROJECT_ID` (optional, defaults to `PROJECT_ID`)
+- `PUBLIC_BQ_DATASET` (optional, default `public_signals`)
 - `CENSUS_API_KEY` (optional but recommended)
 - `BLS_API_KEY` (optional but recommended)
 - `CENSUS_CBP_YEAR` (optional, default `2022`)
@@ -145,6 +159,15 @@ Additional `.env` keys for EPA / NIH / California SOS:
 - `CA_SOS_PROJECT_ID` (optional, defaults to `PROJECT_ID`)
 - `CA_SOS_BQ_DATASET` (optional, default `ca_sos_raw`)
 - `CA_SOS_SUBSCRIPTION_KEY` (required only when California SOS enrichment is enabled)
+
+Additional `.env` keys for RSS feed grouping:
+
+- `RSS_PROJECT_ID` (optional, defaults to `PROJECT_ID`)
+- `RSS_BQ_DATASET` (optional, default `rss_feed`)
+- `RSS_FEED_URLS` (optional, semicolon-delimited `name|url` list; starter defaults include OSHA, FDA MedWatch, and targeted Google News RSS queries)
+- `RSS_LOOKBACK_DAYS` (optional, default `30`)
+- `RSS_MAX_ITEMS_PER_FEED` (optional, default `40`)
+- `RSS_COMPANY_SEARCH_LIMIT` (optional, default `12`; builds company-specific Google News RSS feeds from actionable eyewear accounts)
 
 Ad-hoc pulls:
 
@@ -178,6 +201,8 @@ It is the primary scheduler for this repo. It supports:
 
 - `PROJECT_ID`
 - `BQ_DATASET`
+- `PUBLIC_PROJECT_ID`
+- `PUBLIC_BQ_DATASET`
 - `DOL_API_POLICY_URL`
 - `DOL_API_POLICY_REVIEWED_ON`
 - `DOL_API_CONTACT_EMAIL`
@@ -194,9 +219,17 @@ It is the primary scheduler for this repo. It supports:
 
 - `ACCIDENT_API_LIMIT` (default `1000`)
 - `ACCIDENT_API_MAX_PAGES` (default `1`)
+- `CENSUS_CBP_YEAR` (default `2022`)
+- `RSS_PROJECT_ID` (default `PROJECT_ID`)
+- `RSS_BQ_DATASET` (default `rss_feed`)
 - `FDA_PROJECT_ID` (optional; if set, FDA tables are written to this separate project)
 - `FDA_BQ_DATASET` (default `fda_raw`)
 - `FDA_LOOKBACK_YEARS` (default `10`)
+
+### Optional GitHub secrets
+
+- `CENSUS_API_KEY` (optional; public mode still works with lower/no-key quota)
+- `BLS_API_KEY` (optional; public mode still works with lower/no-key quota)
 
 If required secrets/variables are missing, the workflow fails before running the pull.
 
@@ -232,6 +265,17 @@ Cross-source outputs for Google Sheets / call review:
 - `osha_raw.sales_call_now_current`
 - `osha_raw.sales_call_now_sandiego_current`
 - `osha_raw.sales_call_now_bayarea_current`
+- `osha_raw.eyewear_opportunity_current`
+- `osha_raw.eyewear_opportunity_actionable_current`
+- `osha_raw.eyewear_opportunity_sandiego_current`
+- `osha_raw.eyewear_opportunity_bayarea_current`
+
+RSS current-awareness outputs:
+
+- `rss_feed.feed_items_raw`
+- `rss_feed.rss_articles_current`
+- `rss_feed.rss_company_matches_current`
+- `rss_feed.rss_watchlist_current`
 
 Local OSHA download helper outputs:
 
@@ -240,6 +284,14 @@ Local OSHA download helper outputs:
 - `osha_raw.severe_injury_ca_current`
 - `osha_raw.health_samples_focus_current`
 - `osha_raw.osha_downloads_company_signals_current`
+
+`eyewear_opportunity_current` classifies records into:
+
+- `Direct Need`: explicit eye / prescription evidence from OSHA citations or downloadable OSHA injury records
+- `Probable Need`: likely eyewear-program need based on supportive OSHA download signals, PPE context, or cross-source support
+- `Fit Only`: commercially relevant account without enough need evidence for active outreach
+
+Use `eyewear_opportunity_actionable_current` when you want to work only the `Direct Need` and `Probable Need` records.
 
 ## Google Sheets formatting
 

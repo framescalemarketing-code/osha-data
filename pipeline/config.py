@@ -84,6 +84,14 @@ class ComplianceConfig:
 class PipelineConfig:
     project_id: str
     dataset: str
+    public_project_id: str
+    public_dataset: str
+    rss_project_id: str
+    rss_dataset: str
+    rss_feed_urls: str
+    rss_lookback_days: int
+    rss_max_items_per_feed: int
+    rss_company_search_limit: int
     fda_project_id: str
     fda_dataset: str
     epa_project_id: str
@@ -116,6 +124,32 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
 
     project_id = env_value("PROJECT_ID", dotenv_values, "osha-data-live-20260303")
     dataset = env_value("BQ_DATASET", dotenv_values, "osha_raw")
+    public_project_id = env_value("PUBLIC_PROJECT_ID", dotenv_values, project_id)
+    public_dataset = env_value("PUBLIC_BQ_DATASET", dotenv_values, "public_signals")
+    rss_project_id = env_value("RSS_PROJECT_ID", dotenv_values, project_id)
+    rss_dataset = env_value("RSS_BQ_DATASET", dotenv_values, "rss_feed")
+    rss_feed_urls = env_value(
+        "RSS_FEED_URLS",
+        dotenv_values,
+        (
+            "osha_news|https://www.osha.gov/news/newsreleases.xml;"
+            "fda_medwatch|https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/medwatch/rss.xml;"
+            "google_news_eye_safety|https://news.google.com/rss/search?q=%22eye%20injury%22%20OR%20%22eye%20protection%22%20OR%20%22protective%20eyewear%22%20OR%20%22safety%20glasses%22&hl=en-US&gl=US&ceid=US:en;"
+            "google_news_prescription_safety|https://news.google.com/rss/search?q=%22prescription%20safety%20eyewear%22%20OR%20%22rx%20safety%20glasses%22%20OR%20%22osha%20eye%20protection%22&hl=en-US&gl=US&ceid=US:en"
+        ),
+    )
+    rss_lookback_days = _parse_int(
+        env_value("RSS_LOOKBACK_DAYS", dotenv_values, "30"),
+        30,
+    )
+    rss_max_items_per_feed = _parse_int(
+        env_value("RSS_MAX_ITEMS_PER_FEED", dotenv_values, "40"),
+        40,
+    )
+    rss_company_search_limit = _parse_int(
+        env_value("RSS_COMPANY_SEARCH_LIMIT", dotenv_values, "12"),
+        12,
+    )
     fda_project_id = env_value("FDA_PROJECT_ID", dotenv_values, project_id)
     fda_dataset = env_value("FDA_BQ_DATASET", dotenv_values, "fda_raw")
     epa_project_id = env_value("EPA_PROJECT_ID", dotenv_values, project_id)
@@ -227,6 +261,14 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
     return PipelineConfig(
         project_id=project_id,
         dataset=dataset,
+        public_project_id=public_project_id,
+        public_dataset=public_dataset,
+        rss_project_id=rss_project_id,
+        rss_dataset=rss_dataset,
+        rss_feed_urls=rss_feed_urls,
+        rss_lookback_days=rss_lookback_days,
+        rss_max_items_per_feed=rss_max_items_per_feed,
+        rss_company_search_limit=rss_company_search_limit,
         fda_project_id=fda_project_id,
         fda_dataset=fda_dataset,
         epa_project_id=epa_project_id,

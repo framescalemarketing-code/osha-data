@@ -12,8 +12,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from pipeline.bigquery import bq_load_csv, bq_query_sql
+from pipeline.bigquery import bq_load_csv
 from pipeline.config import PipelineConfig
+from pipeline.sql_refresh import run_sql_refresh
 
 
 CENSUS_CBP_SCHEMA = (
@@ -332,8 +333,8 @@ def run_public_signals_ingest(config: PipelineConfig) -> None:
     if census_rows > 0:
         bq_load_csv(
             repo_root=config.paths.repo_root,
-            project_id=config.project_id,
-            dataset=config.dataset,
+            project_id=config.public_project_id,
+            dataset=config.public_dataset,
             table="census_cbp_ca_raw",
             csv_path=census_csv,
             autodetect=False,
@@ -343,8 +344,8 @@ def run_public_signals_ingest(config: PipelineConfig) -> None:
     if bls_rows > 0:
         bq_load_csv(
             repo_root=config.paths.repo_root,
-            project_id=config.project_id,
-            dataset=config.dataset,
+            project_id=config.public_project_id,
+            dataset=config.public_dataset,
             table="bls_ca_series_raw",
             csv_path=bls_csv,
             autodetect=False,
@@ -354,8 +355,8 @@ def run_public_signals_ingest(config: PipelineConfig) -> None:
     if usaspending_rows > 0:
         bq_load_csv(
             repo_root=config.paths.repo_root,
-            project_id=config.project_id,
-            dataset=config.dataset,
+            project_id=config.public_project_id,
+            dataset=config.public_dataset,
             table="usaspending_naics_ca_raw",
             csv_path=usaspending_csv,
             autodetect=False,
@@ -365,10 +366,10 @@ def run_public_signals_ingest(config: PipelineConfig) -> None:
     public_sql_file = config.paths.sql_dir / "refresh_public_signals.sql"
     if public_sql_file.exists():
         logging.info("Refreshing derived public enrichment tables...")
-        bq_query_sql(
-            repo_root=config.paths.repo_root,
-            project_id=config.project_id,
-            sql_text=public_sql_file.read_text(encoding="utf-8"),
+        run_sql_refresh(
+            config=config,
+            sql_filename="refresh_public_signals.sql",
+            project_id=config.public_project_id,
         )
     else:
         logging.warning("Public signals SQL file not found: %s", public_sql_file)

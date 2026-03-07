@@ -49,6 +49,14 @@ class FdaSignalsTests(unittest.TestCase):
         return PipelineConfig(
             project_id="osha-project",
             dataset="osha_raw",
+            public_project_id="cold-lead-pipeline-dashboard",
+            public_dataset="public_signals",
+            rss_project_id="cold-lead-pipeline-dashboard",
+            rss_dataset="rss_feed",
+            rss_feed_urls="demo|https://example.com/rss.xml",
+            rss_lookback_days=30,
+            rss_max_items_per_feed=20,
+            rss_company_search_limit=5,
             fda_project_id="fda-project",
             fda_dataset="fda_raw",
             epa_project_id="epa-project",
@@ -91,7 +99,7 @@ class FdaSignalsTests(unittest.TestCase):
             sql_dir = temp_dir / "sql"
             sql_dir.mkdir()
             (sql_dir / "refresh_sales_priority_outputs.sql").write_text(
-                "\ufeffSELECT '{{FDA_PROJECT_ID}}' AS fda_project, '{{EPA_PROJECT_ID}}' AS epa_project, '{{OSHA_PROJECT_ID}}' AS osha_project",
+                "\ufeffSELECT '{{FDA_PROJECT_ID}}' AS fda_project, '{{EPA_PROJECT_ID}}' AS epa_project, '{{OSHA_PROJECT_ID}}' AS osha_project, '{{PUBLIC_PROJECT_ID}}' AS public_project",
                 encoding="utf-8",
             )
             config = self._make_config(temp_dir)
@@ -110,6 +118,7 @@ class FdaSignalsTests(unittest.TestCase):
             self.assertIn("fda-project", kwargs["sql_text"])
             self.assertIn("epa-project", kwargs["sql_text"])
             self.assertIn("osha-project", kwargs["sql_text"])
+            self.assertIn("cold-lead-pipeline-dashboard", kwargs["sql_text"])
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

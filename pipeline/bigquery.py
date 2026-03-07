@@ -113,6 +113,7 @@ def bq_load_csv(
     allow_quoted_newlines: bool = False,
     field_delimiter: str | None = None,
 ) -> None:
+    bq_ensure_dataset(repo_root=repo_root, project_id=project_id, dataset=dataset)
     target = f"{project_id}:{dataset}.{table}"
     cmd = [
         "bq",
@@ -133,6 +134,14 @@ def bq_load_csv(
 
     cmd.extend([target, str(csv_path)])
     _run(cmd, cwd=repo_root)
+
+
+def bq_ensure_dataset(*, repo_root: Path, project_id: str, dataset: str) -> None:
+    bq_query_sql(
+        repo_root=repo_root,
+        project_id=project_id,
+        sql_text=f"CREATE SCHEMA IF NOT EXISTS `{project_id}.{dataset}`;",
+    )
 
 
 def bq_query_sql(*, repo_root: Path, project_id: str, sql_text: str) -> None:

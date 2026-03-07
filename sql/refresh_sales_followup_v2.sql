@@ -737,7 +737,7 @@ scored AS (
   LEFT JOIN accident_metrics am ON ic.activity_nr = am.activity_nr
   LEFT JOIN accident_detail_metrics adm ON ic.activity_nr = adm.activity_nr
   LEFT JOIN company_profile_metrics cpm ON ic.company_key = cpm.company_key
-  LEFT JOIN osha_raw.public_enrichment_naics2_current pe
+  LEFT JOIN `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.public_enrichment_naics2_current` pe
     ON SUBSTR(REGEXP_REPLACE(ic.naics_code, r'[^0-9]', ''), 1, 2) = pe.naics2
   WHERE ic.rn = 1
 ),
@@ -1720,7 +1720,7 @@ scored AS (
   LEFT JOIN accident_metrics am ON ic.activity_nr = am.activity_nr
   LEFT JOIN accident_detail_metrics adm ON ic.activity_nr = adm.activity_nr
   LEFT JOIN company_profile_metrics cpm ON ic.company_key = cpm.company_key
-  LEFT JOIN osha_raw.public_enrichment_naics2_current pe
+  LEFT JOIN `{{PUBLIC_PROJECT_ID}}.{{PUBLIC_DATASET}}.public_enrichment_naics2_current` pe
     ON SUBSTR(REGEXP_REPLACE(ic.naics_code, r'[^0-9]', ''), 1, 2) = pe.naics2
   WHERE ic.rn = 1
 ),

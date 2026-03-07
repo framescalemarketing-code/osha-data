@@ -38,6 +38,30 @@ class BigQueryTests(unittest.TestCase):
         command = args[0]
         self.assertIn("--field_delimiter=|", command)
 
+    def test_bq_load_csv_ensures_dataset_before_load(self) -> None:
+        with patch("pipeline.bigquery._run") as run_mock:
+            from pipeline.bigquery import bq_load_csv
+
+            bq_load_csv(
+                repo_root=Path.cwd(),
+                project_id="demo-project",
+                dataset="demo_dataset",
+                table="demo_table",
+                csv_path=Path("demo.csv"),
+                autodetect=True,
+            )
+
+        self.assertEqual(run_mock.call_count, 2)
+        query_args, query_kwargs = run_mock.call_args_list[0]
+        self.assertEqual(
+            query_args[0],
+            ["bq", "query", "--project_id=demo-project", "--use_legacy_sql=false"],
+        )
+        self.assertEqual(
+            query_kwargs["input_text"],
+            "CREATE SCHEMA IF NOT EXISTS `demo-project.demo_dataset`;",
+        )
+
     def test_resolve_command_prefers_windows_bq_cmd(self) -> None:
         with patch("pipeline.bigquery.os.name", "nt"):
             with patch("pipeline.bigquery.shutil.which") as which_mock:

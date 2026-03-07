@@ -34,6 +34,14 @@ jobs:
     env:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       BQ_DATASET: ${{ vars.BQ_DATASET }}
+      PUBLIC_PROJECT_ID: ${{ vars.PUBLIC_PROJECT_ID }}
+      PUBLIC_BQ_DATASET: ${{ vars.PUBLIC_BQ_DATASET }}
+      RSS_PROJECT_ID: ${{ vars.RSS_PROJECT_ID }}
+      RSS_BQ_DATASET: ${{ vars.RSS_BQ_DATASET }}
+      RSS_FEED_URLS: ${{ vars.RSS_FEED_URLS }}
+      RSS_LOOKBACK_DAYS: ${{ vars.RSS_LOOKBACK_DAYS }}
+      RSS_MAX_ITEMS_PER_FEED: ${{ vars.RSS_MAX_ITEMS_PER_FEED }}
+      RSS_COMPANY_SEARCH_LIMIT: ${{ vars.RSS_COMPANY_SEARCH_LIMIT }}
       PIPELINE_LOG_FILE: osha-sales-pipeline.log
       SINCE_DATE: ${{ github.event.inputs.since_date }}
       API_LIMIT: ${{ github.event.inputs.api_limit }}
@@ -66,6 +74,9 @@ jobs:
       DATA_RETENTION_DAYS: ${{ vars.DATA_RETENTION_DAYS }}
       DOL_API_KEY: ${{ secrets.DOL_API_KEY }}
       OPENFDA_API_KEY: ${{ secrets.OPENFDA_API_KEY }}
+      CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+      BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+      CENSUS_CBP_YEAR: ${{ vars.CENSUS_CBP_YEAR }}
 
     steps:
       - name: Checkout

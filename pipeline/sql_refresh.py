@@ -21,6 +21,11 @@ def run_sql_refresh(
     sql_text = (
         sql_text.replace("{{OSHA_PROJECT_ID}}", config.project_id)
         .replace("{{OSHA_DATASET}}", config.dataset)
+        .replace("{{PUBLIC_PROJECT_ID}}", config.public_project_id)
+        .replace("{{PUBLIC_DATASET}}", config.public_dataset)
+        .replace("{{RSS_PROJECT_ID}}", config.rss_project_id)
+        .replace("{{RSS_DATASET}}", config.rss_dataset)
+        .replace("{{RSS_LOOKBACK_DAYS}}", str(config.rss_lookback_days))
         .replace("{{FDA_PROJECT_ID}}", config.fda_project_id)
         .replace("{{FDA_DATASET}}", config.fda_dataset)
         .replace("{{EPA_PROJECT_ID}}", config.epa_project_id)

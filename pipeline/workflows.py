@@ -17,6 +17,7 @@ from pipeline.fda_signals import run_fda_signals_ingest
 from pipeline.nih_signals import run_nih_signals_ingest
 from pipeline.osha_local_downloads import run_osha_local_downloads_ingest
 from pipeline.public_signals import run_public_signals_ingest
+from pipeline.rss_signals import run_rss_signals_ingest
 
 
 ENDPOINT_SCHEMAS = {
@@ -285,7 +286,16 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
             exc,
         )
 
-    logging.info("Stage 8/8: California SOS stage.")
+    logging.info("Stage 8/9: Pull RSS current-awareness signals.")
+    try:
+        run_rss_signals_ingest(config)
+    except Exception as exc:
+        logging.warning(
+            "RSS signals stage failed; continuing without article watchlist enrichment: %s",
+            exc,
+        )
+
+    logging.info("Stage 9/9: California SOS stage.")
     try:
         run_ca_sos_signals_ingest(config)
     except Exception as exc:
