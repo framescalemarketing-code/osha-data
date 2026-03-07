@@ -22,8 +22,11 @@ from pipeline.workflows import (
     run_inspection_ingest,
     run_local_download_ingest,
     run_nih_source_ingest,
+    run_opportunity_rss_source_ingest,
     run_public_signals_ingest,
     run_preflight_checks,
+    run_sales_intel_current_sync,
+    run_sales_intel_flow,
 )
 
 
@@ -150,6 +153,24 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_common_run_args(ingest_local)
 
+    ingest_opportunity_rss = sub.add_parser(
+        "ingest-opportunity-rss",
+        help="Fetch targeted industry RSS feeds, classify opportunity events, and update local snapshots",
+    )
+    _add_common_run_args(ingest_opportunity_rss)
+
+    sync_sales_intel_current = sub.add_parser(
+        "sync-sales-intel-current",
+        help="Sync current BigQuery sales outputs into the local sales-intel store",
+    )
+    _add_common_run_args(sync_sales_intel_current)
+
+    run_sales_intel = sub.add_parser(
+        "run-sales-intel",
+        help="Sync current sales outputs plus RSS opportunity events into dashboard snapshots",
+    )
+    _add_common_run_args(run_sales_intel)
+
     q_inspection = sub.add_parser(
         "query-inspection",
         help="Pull inspection endpoint incrementally to CSV",
@@ -258,6 +279,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest-local-osha-downloads":
         run_local_download_ingest(config)
+        return 0
+
+    if args.command == "ingest-opportunity-rss":
+        run_opportunity_rss_source_ingest(config)
+        return 0
+
+    if args.command == "sync-sales-intel-current":
+        run_sales_intel_current_sync(config)
+        return 0
+
+    if args.command == "run-sales-intel":
+        run_sales_intel_flow(config)
         return 0
 
     if args.command == "query-inspection":

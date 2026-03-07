@@ -30,6 +30,12 @@ Primary command:
 python -m pipeline.cli run-full
 ```
 
+Separate sales-intelligence app sync:
+
+```powershell
+python -m pipeline.cli run-sales-intel
+```
+
 ## Repository layout
 
 - `pipeline/`: Python package with config, compliance, API client, extractors, and workflows
@@ -41,6 +47,7 @@ python -m pipeline.cli run-full
 - `sql/refresh_nih_followup.sql`: NIH research organization support scoring refresh logic
 - `sql/refresh_sales_priority_outputs.sql`: cross-source match + final sales priority outputs
 - `data/`: runtime CSV/checkpoint artifacts (gitignored except `.gitkeep`)
+- `dashboard/`: Next.js internal dashboard for current signals, RSS opportunities, review queue, and intersections
 
 ## Compliance and API controls
 
@@ -88,6 +95,9 @@ python -m pipeline.cli ingest-epa-signals
 python -m pipeline.cli ingest-nih-signals
 python -m pipeline.cli ingest-ca-sos-signals
 python -m pipeline.cli ingest-local-osha-downloads
+python -m pipeline.cli ingest-opportunity-rss
+python -m pipeline.cli sync-sales-intel-current
+python -m pipeline.cli run-sales-intel
 ```
 
 Public signals wrapper script:
@@ -145,6 +155,19 @@ Additional `.env` keys for EPA / NIH / California SOS:
 - `CA_SOS_PROJECT_ID` (optional, defaults to `PROJECT_ID`)
 - `CA_SOS_BQ_DATASET` (optional, default `ca_sos_raw`)
 - `CA_SOS_SUBSCRIPTION_KEY` (required only when California SOS enrichment is enabled)
+
+Additional `.env` keys for the sales-intelligence dashboard flow:
+
+- `SALES_INTEL_DB_PATH` (optional, default `data/sales_intel/sales_intel.sqlite`)
+- `SALES_INTEL_SNAPSHOT_DIR` (optional, default `data/dashboard`)
+- `SALES_INTEL_CURRENT_LIMIT` (optional, default `500`)
+- `OPPORTUNITY_RSS_MAX_ITEMS_PER_FEED` (optional, default `20`)
+- `OPPORTUNITY_RSS_ACCEPT_SCORE` (optional, default `65`)
+- `OPPORTUNITY_RSS_REVIEW_SCORE` (optional, default `50`)
+- `OPPORTUNITY_RSS_TIMEOUT_SECONDS` (optional, default `45`)
+- `OPPORTUNITY_RSS_MAX_RETRIES` (optional, default `3`)
+- `OPPORTUNITY_RSS_ARTICLE_FETCH_LIMIT` (optional, default `20`)
+- `OPPORTUNITY_RSS_USER_AGENT` (optional, default `osha-sales-pipeline-opportunity-rss/1.0`)
 
 Ad-hoc pulls:
 
@@ -233,6 +256,15 @@ Cross-source outputs for Google Sheets / call review:
 - `osha_raw.sales_call_now_sandiego_current`
 - `osha_raw.sales_call_now_bayarea_current`
 
+Sales-intelligence local store and snapshots:
+
+- `data/sales_intel/sales_intel.sqlite`
+- `data/dashboard/summary.json`
+- `data/dashboard/current-signals.json`
+- `data/dashboard/opportunity-events.json`
+- `data/dashboard/review-queue.json`
+- `data/dashboard/intersections.json`
+
 Local OSHA download helper outputs:
 
 - `osha_raw.ita_300a_summary_ca_current`
@@ -251,3 +283,31 @@ Main entry points:
 - `installHourlyOshaViewTriggers()`
 - `installDailyOshaViewTriggersAt9am()`
 - `installOshaViewAssets()`
+
+## Sales-intelligence dashboard
+
+The new dashboard keeps the current repo outputs and the RSS opportunity feed as separate views, then raises an alert when both channels point to the same company.
+
+Pipeline flow:
+
+1. `sync-sales-intel-current` pulls `sales_call_now_current` from BigQuery into the local sales-intel store.
+2. `ingest-opportunity-rss` fetches targeted RSS feeds, stores raw items, filters for operational-growth signals, scores events, enriches contact paths, and writes accepted/review items.
+3. `run-sales-intel` runs both steps and rebuilds the JSON snapshots used by the dashboard.
+
+Local dashboard run:
+
+```powershell
+python -m pipeline.cli run-sales-intel
+cd .\dashboard
+npm install
+npm run dev
+```
+
+Dashboard routes:
+
+- `/` overview
+- `/current` current repo signals in a sales-friendly table
+- `/opportunities` accepted RSS opportunity events with filters
+- `/opportunities/[id]` event detail
+- `/review` borderline review queue
+- `/intersections` company overlap alerts

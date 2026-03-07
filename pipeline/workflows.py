@@ -15,8 +15,11 @@ from pipeline.epa_signals import run_epa_signals_ingest
 from pipeline.extract import query_endpoint_to_csv, query_inspection_incremental
 from pipeline.fda_signals import run_fda_signals_ingest
 from pipeline.nih_signals import run_nih_signals_ingest
+from pipeline.opportunity_rss import run_opportunity_rss_ingest
 from pipeline.osha_local_downloads import run_osha_local_downloads_ingest
 from pipeline.public_signals import run_public_signals_ingest
+from pipeline.sales_intel_store import SalesIntelStore
+from pipeline.sales_intel_sync import sync_current_pipeline_signals
 
 
 ENDPOINT_SCHEMAS = {
@@ -218,6 +221,23 @@ def run_nih_source_ingest(config: PipelineConfig) -> None:
 
 def run_ca_sos_source_ingest(config: PipelineConfig) -> None:
     run_ca_sos_signals_ingest(config)
+
+
+def run_opportunity_rss_source_ingest(config: PipelineConfig) -> None:
+    run_opportunity_rss_ingest(config)
+
+
+def run_sales_intel_current_sync(config: PipelineConfig) -> None:
+    sync_current_pipeline_signals(config)
+
+
+def run_sales_intel_flow(config: PipelineConfig) -> None:
+    store = SalesIntelStore.from_config(config)
+    store.initialize()
+    sync_current_pipeline_signals(config, store=store, export_snapshots=False)
+    run_opportunity_rss_ingest(config, store=store, export_snapshots=False)
+    store.rebuild_intersections()
+    store.export_snapshots()
 
 
 def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
