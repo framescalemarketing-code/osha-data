@@ -37,12 +37,24 @@ export type PublicSourceFreshness = {
 };
 
 export type PublicNaicsItem = {
+  region: string;
+  industry_segment: string;
   naics2: string;
+  account_count: number;
+  priority_1_count: number;
   establishments_ca: number;
   employees_ca: number;
   annual_payroll_ca: number;
   federal_amount_ca: number;
   external_signal_points: number;
+};
+
+export type LocalTargetSummaryItem = {
+  region: string;
+  naics2: string;
+  industry_segment: string;
+  account_count: number;
+  priority_1_count: number;
 };
 
 export type BlsGrowthItem = {
@@ -54,7 +66,9 @@ export type BlsGrowthItem = {
 
 export type PublicSnapshot = {
   exported_at: string;
+  regions: string[];
   source_freshness: PublicSourceFreshness[];
+  local_target_summary: LocalTargetSummaryItem[];
   naics_enrichment: PublicNaicsItem[];
   bls_growth: BlsGrowthItem[];
 };

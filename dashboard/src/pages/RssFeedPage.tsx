@@ -37,9 +37,9 @@ export function RssFeedPage() {
           <p className="eyebrow">Current Awareness</p>
           <h1>RSS Newsfeed</h1>
           <p className="hero-copy">
-            Industry news from the configured feeds, focused on expansion, acquisitions, funding,
-            hiring, and other business signals that can support a more structured safety eyewear
-            program conversation.
+            Industry-level news from the configured feeds, focused on expansion, acquisitions,
+            funding, hiring, and other business signals that can support a more structured safety
+            eyewear program conversation.
           </p>
         </div>
         <div className="stat-strip">
@@ -62,7 +62,7 @@ export function RssFeedPage() {
         <section className="panel">
           <div className="panel-header">
             <h2>Alignment Watchlist</h2>
-            <p>Accounts where strict eyewear targets line up with RSS business momentum signals.</p>
+            <p>San Diego and Bay Area targets where local accounts line up with RSS business momentum signals.</p>
           </div>
           {data.alignment_watchlist.length === 0 ? (
             <div className="empty-state">
@@ -109,7 +109,7 @@ export function RssFeedPage() {
         <section className="panel">
           <div className="panel-header">
             <h2>Latest Feed Items</h2>
-            <p>Recent RSS articles scored for business opportunity signal and momentum.</p>
+            <p>Recent industry expansion and business-momentum articles from the configured feeds.</p>
           </div>
           <div className="rss-card-list">
             {data.articles.map((article) => (

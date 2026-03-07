@@ -87,6 +87,21 @@ def main() -> int:
         LIMIT 40
         """,
     )
+    local_target_summary = _run_bq_json(
+        project_id=config.project_id,
+        repo_root=repo_root,
+        sql=f"""
+        SELECT
+          `Region` AS region,
+          SUBSTR(REGEXP_REPLACE(COALESCE(`NAICS Code`, ''), r'[^0-9]', ''), 1, 2) AS naics2,
+          `Industry Segment` AS industry_segment,
+          COUNT(*) AS account_count,
+          COUNTIF(`Overall Sales Priority` = 'Priority 1') AS priority_1_count
+        FROM `{config.project_id}.{config.dataset}.eyewear_opportunity_actionable_current`
+        WHERE `Region` IN ('San Diego', 'Bay Area')
+        GROUP BY 1, 2, 3
+        """,
+    )
     public_freshness = _run_bq_json(
         project_id=config.public_project_id,
         repo_root=repo_root,
@@ -108,28 +123,62 @@ def main() -> int:
         project_id=config.public_project_id,
         repo_root=repo_root,
         sql=f"""
+        WITH local_targets AS (
+          SELECT
+            `Region` AS region,
+            SUBSTR(REGEXP_REPLACE(COALESCE(`NAICS Code`, ''), r'[^0-9]', ''), 1, 2) AS naics2,
+            `Industry Segment` AS industry_segment,
+            COUNT(*) AS account_count,
+            COUNTIF(`Overall Sales Priority` = 'Priority 1') AS priority_1_count
+          FROM `{config.project_id}.{config.dataset}.eyewear_opportunity_actionable_current`
+          WHERE `Region` IN ('San Diego', 'Bay Area')
+          GROUP BY 1, 2, 3
+        )
         SELECT
-          naics2,
-          establishments_ca,
-          employees_ca,
-          annual_payroll_ca,
-          federal_amount_ca,
-          external_signal_points
-        FROM `{config.public_project_id}.{config.public_dataset}.public_enrichment_naics2_current`
-        ORDER BY external_signal_points DESC, employees_ca DESC
-        LIMIT 25
+          lt.region,
+          lt.industry_segment,
+          lt.naics2,
+          lt.account_count,
+          lt.priority_1_count,
+          pe.establishments_ca,
+          pe.employees_ca,
+          pe.annual_payroll_ca,
+          pe.federal_amount_ca,
+          pe.external_signal_points
+        FROM local_targets lt
+        LEFT JOIN `{config.public_project_id}.{config.public_dataset}.public_enrichment_naics2_current` pe
+          ON lt.naics2 = pe.naics2
+        ORDER BY lt.region, pe.external_signal_points DESC, lt.account_count DESC, lt.naics2
         """,
     )
     bls_growth = _run_bq_json(
         project_id=config.public_project_id,
         repo_root=repo_root,
         sql=f"""
+        WITH local_segments AS (
+          SELECT DISTINCT LOWER(`Industry Segment`) AS industry_segment
+          FROM `{config.project_id}.{config.dataset}.eyewear_opportunity_actionable_current`
+          WHERE `Region` IN ('San Diego', 'Bay Area')
+            AND `Industry Segment` IS NOT NULL
+            AND `Industry Segment` != ''
+        ),
+        matched_segments AS (
+          SELECT DISTINCT
+            b.segment,
+            b.latest_value,
+            b.prior_12m_value,
+            b.pct_change_12m
+          FROM `{config.public_project_id}.{config.public_dataset}.bls_segment_growth_ca_current` b
+          JOIN local_segments ls
+            ON ls.industry_segment LIKE CONCAT('%', LOWER(b.segment), '%')
+            OR LOWER(b.segment) LIKE CONCAT('%', ls.industry_segment, '%')
+        )
         SELECT
           segment,
           latest_value,
           prior_12m_value,
           pct_change_12m
-        FROM `{config.public_project_id}.{config.public_dataset}.bls_segment_growth_ca_current`
+        FROM matched_segments
         ORDER BY segment
         """,
     )
@@ -149,7 +198,9 @@ def main() -> int:
         dashboard_public / "public-sources.json",
         {
           "exported_at": exported_at,
+          "regions": ["San Diego", "Bay Area"],
           "source_freshness": public_freshness,
+          "local_target_summary": local_target_summary,
           "naics_enrichment": public_naics,
           "bls_growth": bls_growth,
         },
