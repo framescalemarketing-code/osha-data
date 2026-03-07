@@ -751,7 +751,8 @@ scored AS (
       ROUND(
         LEAST(
           100,
-          COALESCE(osha_followup_score_num, 0) * 0.50
+          10
+          + COALESCE(osha_followup_score_num, 0) * 0.50
           + osha_download_program_support_score * 0.85
           + fda_program_need_score * 0.18
           + epa_program_need_score * 0.14
@@ -796,7 +797,8 @@ scored AS (
       ROUND(
         LEAST(
           100,
-          CASE
+          5
+          + CASE
             WHEN employee_size_proxy_num >= 500 THEN 34
             WHEN employee_size_proxy_num >= 250 THEN 28
             WHEN employee_size_proxy_num >= 100 THEN 22
@@ -918,25 +920,25 @@ SELECT
   revenue_estimate_confidence AS `Revenue Estimate Confidence`,
   commercial_fit_score AS `Commercial Fit Score`,
   CASE
-    WHEN commercial_fit_score >= 60 AND estimated_employee_band IN ('100-249', '250-499', '500+') THEN 'Ideal ICP'
-    WHEN commercial_fit_score >= 45 AND estimated_employee_band IN ('50-99', '100-249', '250-499', '500+') THEN 'Strong ICP'
-    WHEN commercial_fit_score >= 30 AND estimated_employee_band NOT IN ('1-19', 'Unknown') THEN 'Possible ICP'
-    ELSE 'Weak ICP'
+    WHEN commercial_fit_score >= 50 AND estimated_employee_band IN ('100-249', '250-499', '500+') THEN 'Ideal ICP'
+    WHEN commercial_fit_score >= 35 AND estimated_employee_band IN ('50-99', '100-249', '250-499', '500+') THEN 'Strong ICP'
+    WHEN commercial_fit_score >= 15 AND estimated_employee_band NOT IN ('Unknown') THEN 'Possible ICP'
+    ELSE 'Emerging ICP'
   END AS `ICP Fit Band`,
   program_need_score AS `Program Need Score`,
   prescription_program_score AS `Prescription Program Score`,
   urgency_score AS `Urgency Score`,
   overall_sales_score AS `Overall Sales Score`,
   CASE
-    WHEN overall_sales_score >= 58 AND commercial_fit_score >= 54 AND estimated_employee_band IN ('100-249', '250-499', '500+') AND program_need_score >= 56 AND (urgency_score >= 30 OR prescription_program_score >= 24 OR matched_source_count >= 2) THEN 'Ideal Call Now'
-    WHEN overall_sales_score >= 46 AND commercial_fit_score >= 42 AND estimated_employee_band IN ('50-99', '100-249', '250-499', '500+') AND (program_need_score >= 48 OR prescription_program_score >= 24) AND (urgency_score >= 24 OR matched_source_count >= 1 OR company_sites_5y_num >= 2) THEN 'Call Now'
-    WHEN overall_sales_score >= 38 AND commercial_fit_score >= 18 THEN 'Research Then Call'
+    WHEN overall_sales_score >= 48 AND commercial_fit_score >= 40 AND estimated_employee_band IN ('50-99', '100-249', '250-499', '500+') AND program_need_score >= 42 AND (urgency_score >= 22 OR prescription_program_score >= 18 OR matched_source_count >= 2) THEN 'Ideal Call Now'
+    WHEN overall_sales_score >= 35 AND commercial_fit_score >= 25 AND estimated_employee_band NOT IN ('Unknown') AND (program_need_score >= 30 OR prescription_program_score >= 16) AND (urgency_score >= 18 OR matched_source_count >= 1 OR company_sites_5y_num >= 2) THEN 'Call Now'
+    WHEN overall_sales_score >= 22 AND (commercial_fit_score >= 8 OR program_need_score >= 20) THEN 'Research Then Call'
     ELSE 'Monitor / Nurture'
   END AS `Should Look At Now`,
   CASE
-    WHEN overall_sales_score >= 58 AND commercial_fit_score >= 54 AND estimated_employee_band IN ('100-249', '250-499', '500+') AND program_need_score >= 56 AND (urgency_score >= 30 OR prescription_program_score >= 24 OR matched_source_count >= 2) THEN 'P0 Ideal'
-    WHEN overall_sales_score >= 46 AND commercial_fit_score >= 42 AND estimated_employee_band IN ('50-99', '100-249', '250-499', '500+') AND (program_need_score >= 48 OR prescription_program_score >= 24) AND (urgency_score >= 24 OR matched_source_count >= 1 OR company_sites_5y_num >= 2) THEN 'P1 Active'
-    WHEN overall_sales_score >= 38 AND commercial_fit_score >= 18 THEN 'P2 Research'
+    WHEN overall_sales_score >= 48 AND commercial_fit_score >= 40 AND estimated_employee_band IN ('50-99', '100-249', '250-499', '500+') AND program_need_score >= 42 AND (urgency_score >= 22 OR prescription_program_score >= 18 OR matched_source_count >= 2) THEN 'P0 Ideal'
+    WHEN overall_sales_score >= 35 AND commercial_fit_score >= 25 AND estimated_employee_band NOT IN ('Unknown') AND (program_need_score >= 30 OR prescription_program_score >= 16) AND (urgency_score >= 18 OR matched_source_count >= 1 OR company_sites_5y_num >= 2) THEN 'P1 Active'
+    WHEN overall_sales_score >= 22 AND (commercial_fit_score >= 8 OR program_need_score >= 20) THEN 'P2 Research'
     ELSE 'P3 Monitor'
   END AS `Overall Sales Priority`,
   ARRAY_TO_STRING(ARRAY(
@@ -1078,7 +1080,7 @@ SELECT
   `CA Employees Signal`,
   `CA Federal Spend Signal`
 FROM deduped
-WHERE overall_sales_score >= 36;
+WHERE overall_sales_score >= 5;
 
 CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current` AS
 WITH base AS (
@@ -1095,12 +1097,11 @@ WITH base AS (
         OR COALESCE(`Severe Loss Of Eye Count`, 0) > 0
       THEN 'Direct Need'
       WHEN COALESCE(`General PPE Citation Count`, 0) > 0
-        OR COALESCE(`OSHA Download Program Support Score`, 0) >= 10
-        OR COALESCE(`OSHA Download Prescription Support Score`, 0) >= 6
-        OR (
-          `Severe Incident Signal` = 'Yes'
-          AND COALESCE(`OSHA Download Program Support Score`, 0) >= 8
-        )
+        OR COALESCE(`OSHA Download Program Support Score`, 0) >= 6
+        OR COALESCE(`OSHA Download Prescription Support Score`, 0) >= 4
+        OR `Severe Incident Signal` = 'Yes'
+        OR `Has Open Violations` = 'Yes'
+        OR COALESCE(`OSHA Follow-up Score`, 0) >= 50
         OR (
           COALESCE(`Matched Source Count`, 0) > 0
           AND (
@@ -1108,6 +1109,19 @@ WITH base AS (
             OR COALESCE(`EPA Signal Summary`, '') != ''
             OR COALESCE(`NIH Signal Summary`, '') != ''
           )
+        )
+        OR (
+          `Industry Segment` IN (
+            'Industrial Manufacturing & Fabrication',
+            'Construction, Trades & Field Crews',
+            'Utilities, Energy & Infrastructure',
+            'Warehouse, Logistics & Distribution',
+            'Medical Devices & Vision Products',
+            'Diagnostics, Instruments & Technical Equipment',
+            'Biotech, Pharma & Life Sciences Manufacturing',
+            'Laboratory, Research & Biotechnology Services'
+          )
+          AND SAFE_CAST(`Employee Count Estimate` AS INT64) >= 20
         )
       THEN 'Probable Need'
       ELSE 'Fit Only'
@@ -1273,7 +1287,7 @@ FROM (
         `Latest Inspection ID` DESC
     ) AS company_dedup_rn
   FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
-  WHERE `Eyewear Need Tier` IN ('Direct Need', 'Probable Need')
+  WHERE `Eyewear Need Tier` IN ('Direct Need', 'Probable Need', 'Fit Only')
 )
 WHERE company_dedup_rn = 1;
 

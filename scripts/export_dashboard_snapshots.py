@@ -20,6 +20,7 @@ def _run_bq_json(*, project_id: str, repo_root: Path, sql: str) -> list[dict[str
             f"--project_id={project_id}",
             "--use_legacy_sql=false",
             "--format=prettyjson",
+            "--max_rows=500",
         ]
     )
     proc = subprocess.run(

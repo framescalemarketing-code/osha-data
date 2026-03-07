@@ -639,11 +639,10 @@ scored AS (
     ) AS hazard_exposure_points,
     (
       CASE
-        WHEN ic.days_since_open <= 14 THEN 30
-        WHEN ic.days_since_open <= 30 THEN 24
-        WHEN ic.days_since_open <= 60 THEN 16
-        WHEN ic.days_since_open <= 90 THEN 8
-        ELSE 2
+        WHEN ic.days_since_open <= 30 THEN 20
+        WHEN ic.days_since_open <= 90 THEN 14
+        WHEN ic.days_since_open <= 180 THEN 8
+        ELSE 4
       END
       + CASE
           WHEN REGEXP_CONTAINS(ic.naics_code, r'^(3391|3345|5417|54138|3254)') THEN 26
@@ -664,7 +663,7 @@ scored AS (
           WHEN COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 200 THEN 12
           WHEN COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 50 THEN 8
           WHEN COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 20 THEN 4
-          ELSE 1
+          ELSE 2
         END
       + CASE
           WHEN COALESCE(cpm.total_inspections_5yr, ic.inspection_count, 1) >= 6 THEN 12
@@ -679,8 +678,9 @@ scored AS (
           ELSE 0
         END
       + CASE
-          WHEN ic.days_since_open <= 7 THEN 10
-          WHEN ic.days_since_open <= 21 THEN 6
+          WHEN ic.days_since_open <= 14 THEN 10
+          WHEN ic.days_since_open <= 30 THEN 6
+          WHEN ic.days_since_open <= 90 THEN 3
           ELSE 0
         END
       + CASE
@@ -968,18 +968,6 @@ WHERE industry_segment IN (
   'Arts, Entertainment & Recreation',
   'Local Services & Repair',
   'Other / Mixed Operations'
-)
-AND (
-  prescription_program_signal
-  OR eye_face_violation_count > 0
-  OR side_protection_violation_count > 0
-  OR general_ppe_violation_count > 0
-  OR hazard_exposure_points >= 6
-  OR open_violation_status
-  OR severe_injury_indicator
-  OR complaint_activity
-  OR followup_percentile >= 0.60
-  OR (followup_score >= 55 AND employee_count_estimate >= 20)
 );
 
 CREATE OR REPLACE VIEW osha_raw.v_sales_followup_bayarea_v2 AS
@@ -1623,11 +1611,10 @@ scored AS (
     ) AS hazard_exposure_points,
     (
       CASE
-        WHEN ic.days_since_open <= 14 THEN 30
-        WHEN ic.days_since_open <= 30 THEN 24
-        WHEN ic.days_since_open <= 60 THEN 16
-        WHEN ic.days_since_open <= 90 THEN 8
-        ELSE 2
+        WHEN ic.days_since_open <= 30 THEN 20
+        WHEN ic.days_since_open <= 90 THEN 14
+        WHEN ic.days_since_open <= 180 THEN 8
+        ELSE 4
       END
       + CASE
           WHEN REGEXP_CONTAINS(ic.naics_code, r'^(3391|3345|5417|54138|3254)') THEN 26
@@ -1648,7 +1635,7 @@ scored AS (
           WHEN COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 200 THEN 12
           WHEN COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 50 THEN 8
           WHEN COALESCE(ic.nr_in_estab, cpm.max_nr_in_estab_5yr, 0) >= 20 THEN 4
-          ELSE 1
+          ELSE 2
         END
       + CASE
           WHEN COALESCE(cpm.total_inspections_5yr, ic.inspection_count, 1) >= 6 THEN 12
@@ -1663,8 +1650,9 @@ scored AS (
           ELSE 0
         END
       + CASE
-          WHEN ic.days_since_open <= 7 THEN 10
-          WHEN ic.days_since_open <= 21 THEN 6
+          WHEN ic.days_since_open <= 14 THEN 10
+          WHEN ic.days_since_open <= 30 THEN 6
+          WHEN ic.days_since_open <= 90 THEN 3
           ELSE 0
         END
       + CASE
@@ -1952,18 +1940,6 @@ WHERE industry_segment IN (
   'Arts, Entertainment & Recreation',
   'Local Services & Repair',
   'Other / Mixed Operations'
-)
-AND (
-  prescription_program_signal
-  OR eye_face_violation_count > 0
-  OR side_protection_violation_count > 0
-  OR general_ppe_violation_count > 0
-  OR hazard_exposure_points >= 6
-  OR open_violation_status
-  OR severe_injury_indicator
-  OR complaint_activity
-  OR followup_percentile >= 0.60
-  OR (followup_score >= 55 AND employee_count_estimate >= 20)
 );
 
 CREATE OR REPLACE TABLE osha_raw.sales_followup_sandiego_current AS
