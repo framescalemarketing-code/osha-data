@@ -1,4 +1,4 @@
-export type RssWatchlistItem = {
+export type RssAlignmentItem = {
   "Account Name": string;
   "Region": string;
   "Eyewear Need Tier": string;
@@ -6,8 +6,9 @@ export type RssWatchlistItem = {
   "Article Link": string;
   "Feed Title": string;
   "Article Priority": string;
-  "Article Eyewear Relevance Score": number;
-  "Article Urgency Score": number;
+  "Article Opportunity Signal Score": number;
+  "Article Momentum Score": number;
+  "Article Signal Summary": string;
 };
 
 export type RssArticleItem = {
@@ -15,16 +16,17 @@ export type RssArticleItem = {
   article_title: string;
   article_link: string;
   article_priority: string;
-  eyewear_relevance_score: number;
-  urgency_score: number;
+  opportunity_signal_score: number;
+  momentum_score: number;
+  signal_summary: string;
   article_published_at: string;
 };
 
 export type RssSnapshot = {
   exported_at: string;
   article_count: number;
-  watchlist_count: number;
-  watchlist: RssWatchlistItem[];
+  alignment_watchlist_count: number;
+  alignment_watchlist: RssAlignmentItem[];
   articles: RssArticleItem[];
 };
 

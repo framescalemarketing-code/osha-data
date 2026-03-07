@@ -35,78 +35,110 @@ _SUFFIX_RE = re.compile(r"[^a-z0-9]+")
 
 _KEYWORD_GROUPS: tuple[tuple[str, int, tuple[str, ...]], ...] = (
     (
-        "Prescription Safety",
-        18,
+        "Funding Capital",
+        16,
         (
-            "prescription safety",
-            "prescription eyewear",
-            "prescription safety glasses",
-            "rx safety",
-            "rx eyewear",
+            "funding",
+            "financing",
+            "investment",
+            "invests",
+            "investing",
+            "raised",
+            "raises",
+            "growth capital",
+            "series a",
+            "series b",
+            "series c",
+            "private equity",
+            "venture capital",
+            "grant",
         ),
     ),
     (
-        "Eye Face PPE",
+        "Expansion Hiring",
         14,
         (
-            "eye protection",
-            "face protection",
-            "protective eyewear",
-            "safety glasses",
-            "safety goggles",
-            "face shield",
-            "eye and face",
+            "expansion",
+            "expand",
+            "expands",
+            "expanded",
+            "hiring",
+            "headcount",
+            "jobs",
+            "workforce",
+            "recruiting",
+            "scale up",
+            "ramp up",
+            "adds staff",
         ),
     ),
     (
-        "Splash Chemical",
+        "M&A Partnership",
+        14,
+        (
+            "acquisition",
+            "acquire",
+            "acquires",
+            "acquired",
+            "merger",
+            "merge",
+            "merged",
+            "joint venture",
+            "strategic partnership",
+            "buys",
+            "buyout",
+        ),
+    ),
+    (
+        "Facility Operations",
+        12,
+        (
+            "new facility",
+            "new plant",
+            "new factory",
+            "new warehouse",
+            "new distribution center",
+            "manufacturing facility",
+            "production facility",
+            "plant expansion",
+            "factory expansion",
+            "capacity expansion",
+            "production line",
+            "new line",
+            "groundbreaking",
+            "site expansion",
+            "campus expansion",
+        ),
+    ),
+    (
+        "Demand Contract",
         10,
         (
-            "chemical splash",
-            "caustic",
-            "corrosive",
-            "solvent",
-            "acid",
-            "hazmat",
+            "contract award",
+            "awarded contract",
+            "multi-year contract",
+            "supply agreement",
+            "purchase agreement",
+            "backlog",
+            "bookings",
+            "customer growth",
         ),
     ),
     (
-        "Dust Debris",
-        10,
-        (
-            "dust",
-            "debris",
-            "grinding",
-            "cutting",
-            "machining",
-            "abrasive",
-        ),
-    ),
-    (
-        "Impact",
-        10,
-        (
-            "impact",
-            "flying particles",
-            "construction",
-            "fabrication",
-            "welding",
-            "shipyard",
-        ),
-    ),
-    (
-        "UV Bright Light",
+        "Launch Approval",
         8,
         (
-            "uv",
-            "ultraviolet",
-            "laser",
-            "bright light",
-            "radiation",
+            "approval",
+            "clearance",
+            "launch",
+            "commercial launch",
+            "commercialization",
+            "rollout",
+            "market entry",
         ),
     ),
     (
-        "Lab Medical",
+        "Industrial Context",
         8,
         (
             "laboratory",
@@ -115,6 +147,16 @@ _KEYWORD_GROUPS: tuple[tuple[str, int, tuple[str, ...]], ...] = (
             "biotech",
             "pharma",
             "research",
+            "manufacturing",
+            "factory",
+            "plant",
+            "warehouse",
+            "distribution",
+            "construction",
+            "chemical",
+            "food processing",
+            "refinery",
+            "utility",
         ),
     ),
     (
@@ -131,17 +173,88 @@ _KEYWORD_GROUPS: tuple[tuple[str, int, tuple[str, ...]], ...] = (
     ),
 )
 
-_URGENCY_TERMS: tuple[tuple[str, int], ...] = (
-    ("recall", 12),
-    ("warning letter", 10),
-    ("outbreak", 10),
-    ("injury", 8),
-    ("fatal", 10),
-    ("death", 10),
-    ("hospitalized", 8),
-    ("loss of eye", 14),
-    ("severe", 6),
-    ("citation", 5),
+_WORK_CONTEXT_TERMS: tuple[str, ...] = (
+    "worker",
+    "workers",
+    "workplace",
+    "occupational",
+    "industrial",
+    "manufacturing",
+    "factory",
+    "plant",
+    "facility",
+    "construction",
+    "contractor",
+    "warehouse",
+    "distribution",
+    "assembly",
+    "machining",
+    "welding",
+    "laboratory",
+    "cleanroom",
+    "pharma",
+    "biotech",
+    "chemical",
+    "food processing",
+    "refinery",
+    "utility",
+    "operations",
+    "operator",
+    "technician",
+    "employee",
+    "employees",
+    "ppe",
+    "osha",
+    "safety manager",
+)
+
+_NOISE_TERMS: tuple[str, ...] = (
+    "sport",
+    "sports",
+    "athlete",
+    "player",
+    "team",
+    "tournament",
+    "league",
+    "season",
+    "game",
+    "match",
+    "coach",
+    "fantasy",
+    "celebrity",
+    "festival",
+    "holiday",
+    "halloween",
+    "pickleball",
+    "ski",
+    "snowboard",
+    "contact lenses",
+    "smartphone",
+    "display technology",
+    "vision correction",
+    "ophthalmology clinic",
+)
+
+_MOMENTUM_TERMS: tuple[tuple[str, int], ...] = (
+    ("funding", 12),
+    ("financing", 12),
+    ("investment", 10),
+    ("raised", 12),
+    ("expansion", 10),
+    ("expand", 8),
+    ("acquisition", 12),
+    ("merger", 12),
+    ("groundbreaking", 10),
+    ("new facility", 10),
+    ("new plant", 10),
+    ("new factory", 10),
+    ("capacity expansion", 10),
+    ("hiring", 8),
+    ("jobs", 6),
+    ("contract award", 10),
+    ("backlog", 8),
+    ("launch", 6),
+    ("approval", 6),
 )
 
 
@@ -280,29 +393,54 @@ def _parse_timestamp(value: str) -> str:
 
 
 def _score_article(title: str, summary: str, text: str) -> tuple[int, int, str, str]:
-    combined = " ".join(part for part in [title, summary, text] if part).lower()
-    matched_signals: list[str] = []
+    combined = " ".join(part for part in [title, summary] if part).lower()
+    matched_direct: list[str] = []
+    matched_support: list[str] = []
     relevance_score = 0
+    direct_match_count = 0
     for label, points, keywords in _KEYWORD_GROUPS:
         if any(keyword in combined for keyword in keywords):
-            relevance_score += points
-            matched_signals.append(label)
+            if label in {"Industrial Context", "Safety Compliance"}:
+                relevance_score += points
+                matched_support.append(label)
+            else:
+                relevance_score += points
+                matched_direct.append(label)
+                direct_match_count += 1
+
+    work_context_hits = sum(1 for keyword in _WORK_CONTEXT_TERMS if keyword in combined)
+    has_work_context = work_context_hits > 0
+    if has_work_context:
+        relevance_score += min(10, work_context_hits * 2)
+        matched_support.append("Workplace Context")
 
     urgency_score = 0
-    for keyword, points in _URGENCY_TERMS:
+    for keyword, points in _MOMENTUM_TERMS:
         if keyword in combined:
             urgency_score += points
+
+    if any(keyword in combined for keyword in _NOISE_TERMS) and not has_work_context:
+        return 0, 0, "Low", ""
+
+    if direct_match_count == 0:
+        return 0, 0, "Low", ""
+
+    has_company_or_operations_context = has_work_context or any(
+        label in matched_support for label in {"Industrial Context", "Safety Compliance"}
+    )
+    if not has_company_or_operations_context:
+        return 0, 0, "Low", ""
 
     relevance_score = min(relevance_score, 100)
     urgency_score = min(urgency_score, 100)
 
     priority = "Low"
-    if relevance_score >= 32 or (relevance_score >= 24 and urgency_score >= 10):
+    if relevance_score >= 30 or (relevance_score >= 22 and urgency_score >= 10):
         priority = "High"
-    elif relevance_score >= 16 or urgency_score >= 10:
+    elif relevance_score >= 16 or (relevance_score >= 12 and urgency_score >= 8):
         priority = "Medium"
 
-    signal_summary = " | ".join(matched_signals[:5])
+    signal_summary = " | ".join([*matched_direct, *matched_support][:5])
     return relevance_score, urgency_score, priority, signal_summary
 
 
@@ -519,7 +657,9 @@ def _load_company_names(config: PipelineConfig) -> list[str]:
 def _build_company_news_feeds(config: PipelineConfig) -> list[RssFeedSpec]:
     specs: list[RssFeedSpec] = []
     for company in _load_company_names(config):
-        query = quote(f'"{company}" OSHA OR safety OR injury OR PPE OR eyewear')
+        query = quote(
+            f'"{company}" ("protective eyewear" OR "safety glasses" OR "eye protection" OR PPE OR OSHA)'
+        )
         specs.append(
             RssFeedSpec(
                 key=f"company_news_{_slugify(company)}",

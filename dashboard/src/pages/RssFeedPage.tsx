@@ -37,8 +37,9 @@ export function RssFeedPage() {
           <p className="eyebrow">Current Awareness</p>
           <h1>RSS Newsfeed</h1>
           <p className="hero-copy">
-            Regulatory headlines, targeted eye-safety news, and company-specific watchlist pulls
-            from the feeds wired into the pipeline.
+            Industry news from the configured feeds, focused on expansion, acquisitions, funding,
+            hiring, and other business signals that can support a more structured safety eyewear
+            program conversation.
           </p>
         </div>
         <div className="stat-strip">
@@ -47,8 +48,8 @@ export function RssFeedPage() {
             <strong>{data.article_count}</strong>
           </div>
           <div className="stat-card">
-            <span className="stat-label">Watchlist Matches</span>
-            <strong>{data.watchlist_count}</strong>
+            <span className="stat-label">Alignment Watchlist</span>
+            <strong>{data.alignment_watchlist_count}</strong>
           </div>
           <div className="stat-card">
             <span className="stat-label">Snapshot</span>
@@ -60,15 +61,15 @@ export function RssFeedPage() {
       <div className="content-grid">
         <section className="panel">
           <div className="panel-header">
-            <h2>Company Watchlist</h2>
-            <p>Matched articles for actionable eyewear accounts.</p>
+            <h2>Alignment Watchlist</h2>
+            <p>Accounts where strict eyewear targets line up with RSS business momentum signals.</p>
           </div>
-          {data.watchlist.length === 0 ? (
+          {data.alignment_watchlist.length === 0 ? (
             <div className="empty-state">
-              <strong>No company matches right now.</strong>
+              <strong>No aligned accounts right now.</strong>
               <span>
-                The feed is live. It will populate here as articles start matching the actionable
-                eyewear account list.
+                The RSS feed is live. This section fills only when a strict eyewear target also
+                appears in relevant business news from the industry feeds.
               </span>
             </div>
           ) : (
@@ -84,7 +85,7 @@ export function RssFeedPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.watchlist.map((item) => (
+                  {data.alignment_watchlist.map((item) => (
                     <tr key={`${item["Account Name"]}-${item["Article Link"]}`}>
                       <td>{item["Account Name"]}</td>
                       <td>
@@ -108,7 +109,7 @@ export function RssFeedPage() {
         <section className="panel">
           <div className="panel-header">
             <h2>Latest Feed Items</h2>
-            <p>Recent RSS articles scored for eyewear relevance and urgency.</p>
+            <p>Recent RSS articles scored for business opportunity signal and momentum.</p>
           </div>
           <div className="rss-card-list">
             {data.articles.map((article) => (
@@ -123,10 +124,11 @@ export function RssFeedPage() {
                   </a>
                 </h3>
                 <div className="score-row">
-                  <span>Relevance {article.eyewear_relevance_score}</span>
-                  <span>Urgency {article.urgency_score}</span>
+                  <span>Signal {article.opportunity_signal_score}</span>
+                  <span>Momentum {article.momentum_score}</span>
                   <span>{formatDate(article.article_published_at)}</span>
                 </div>
+                <p>{article.signal_summary}</p>
               </article>
             ))}
           </div>

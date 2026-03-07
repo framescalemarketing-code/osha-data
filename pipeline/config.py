@@ -132,10 +132,26 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
         "RSS_FEED_URLS",
         dotenv_values,
         (
-            "osha_news|https://www.osha.gov/news/newsreleases.xml;"
-            "fda_medwatch|https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/medwatch/rss.xml;"
-            "google_news_eye_safety|https://news.google.com/rss/search?q=%22eye%20injury%22%20OR%20%22eye%20protection%22%20OR%20%22protective%20eyewear%22%20OR%20%22safety%20glasses%22&hl=en-US&gl=US&ceid=US:en;"
-            "google_news_prescription_safety|https://news.google.com/rss/search?q=%22prescription%20safety%20eyewear%22%20OR%20%22rx%20safety%20glasses%22%20OR%20%22osha%20eye%20protection%22&hl=en-US&gl=US&ceid=US:en"
+            "fierce_biotech|https://www.fiercebiotech.com/rss/xml;"
+            "fierce_pharma|https://www.fiercepharma.com/rss/xml;"
+            "biospace|https://www.biospace.com/rss-feeds;"
+            "biopharma_dive|https://www.biopharmadive.com/feeds/news/;"
+            "industry_week|https://www.industryweek.com/rss.xml;"
+            "manufacturing_net|https://www.manufacturing.net/rss;"
+            "manufacturing_dive|https://www.manufacturingdive.com/feeds/news/;"
+            "assembly_magazine|https://www.assemblymag.com/rss;"
+            "construction_dive|https://www.constructiondive.com/feeds/news/;"
+            "engineering_news_record|https://www.enr.com/rss;"
+            "food_processing|https://www.foodprocessing.com/rss/;"
+            "food_dive|https://www.fooddive.com/feeds/news/;"
+            "chemical_processing|https://www.chemicalprocessing.com/rss;"
+            "chemical_engineering_news|https://cen.acs.org/rss;"
+            "energy_news_network|https://energynews.us/feed/;"
+            "oil_and_gas_journal|https://www.ogj.com/rss;"
+            "supply_chain_dive|https://www.supplychaindive.com/feeds/news/;"
+            "dc_velocity|https://www.dcvelocity.com/rss;"
+            "automotive_news|https://www.autonews.com/rss;"
+            "ee_times|https://www.eetimes.com/feed/"
         ),
     )
     rss_lookback_days = _parse_int(
@@ -147,8 +163,8 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
         40,
     )
     rss_company_search_limit = _parse_int(
-        env_value("RSS_COMPANY_SEARCH_LIMIT", dotenv_values, "12"),
-        12,
+        env_value("RSS_COMPANY_SEARCH_LIMIT", dotenv_values, "0"),
+        0,
     )
     fda_project_id = env_value("FDA_PROJECT_ID", dotenv_values, project_id)
     fda_dataset = env_value("FDA_BQ_DATASET", dotenv_values, "fda_raw")

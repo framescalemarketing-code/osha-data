@@ -22,7 +22,7 @@ The pipeline now runs through Python with:
 5. FDA enrichment pulls (openFDA registration listing, 510(k), PMA) + eyewear-support scoring tables
 6. EPA enrichment pulls (ECHO facility signals) + compliance/environment scoring tables
 7. NIH enrichment pulls (RePORTER project signals) + research/lab scoring tables
-8. RSS current-awareness pulls + article/company watchlist tables
+8. RSS current-awareness pulls + article/alignment watchlist tables
 9. Cross-source sales priority outputs for action queues and call review
 
 Primary command:
@@ -40,7 +40,7 @@ python -m pipeline.cli run-full
 - `sql/refresh_fda_followup.sql`: FDA facility eyewear-support scoring refresh logic
 - `sql/refresh_epa_followup.sql`: EPA facility support scoring refresh logic
 - `sql/refresh_nih_followup.sql`: NIH research organization support scoring refresh logic
-- `sql/refresh_rss_signals.sql`: RSS article normalization + company watchlist refresh logic
+- `sql/refresh_rss_signals.sql`: RSS article normalization + alignment watchlist refresh logic
 - `sql/refresh_sales_priority_outputs.sql`: cross-source match + final sales priority outputs
 - `data/`: runtime CSV/checkpoint artifacts (gitignored except `.gitkeep`)
 
@@ -164,10 +164,10 @@ Additional `.env` keys for RSS feed grouping:
 
 - `RSS_PROJECT_ID` (optional, defaults to `PROJECT_ID`)
 - `RSS_BQ_DATASET` (optional, default `rss_feed`)
-- `RSS_FEED_URLS` (optional, semicolon-delimited `name|url` list; starter defaults include OSHA, FDA MedWatch, and targeted Google News RSS queries)
+- `RSS_FEED_URLS` (optional, semicolon-delimited `name|url` list; defaults are industry publications across biopharma, manufacturing, construction, chemicals, energy, logistics, automotive, and electronics)
 - `RSS_LOOKBACK_DAYS` (optional, default `30`)
 - `RSS_MAX_ITEMS_PER_FEED` (optional, default `40`)
-- `RSS_COMPANY_SEARCH_LIMIT` (optional, default `12`; builds company-specific Google News RSS feeds from actionable eyewear accounts)
+- `RSS_COMPANY_SEARCH_LIMIT` (optional, default `0`; set above zero only if you want company-specific Google News searches in addition to the fixed industry feeds)
 
 Ad-hoc pulls:
 
@@ -275,6 +275,7 @@ RSS current-awareness outputs:
 - `rss_feed.feed_items_raw`
 - `rss_feed.rss_articles_current`
 - `rss_feed.rss_company_matches_current`
+- `rss_feed.alignment_watchlist_current`
 - `rss_feed.rss_watchlist_current`
 
 Local OSHA download helper outputs:

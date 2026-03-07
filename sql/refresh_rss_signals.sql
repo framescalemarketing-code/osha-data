@@ -46,6 +46,12 @@ deduped AS (
     FROM normalized n
   )
   WHERE rn = 1
+),
+filtered AS (
+  SELECT *
+  FROM deduped
+  WHERE eyewear_relevance_score >= 14
+    AND article_priority IN ('High', 'Medium')
 )
 SELECT
   feed_key,
@@ -66,7 +72,7 @@ SELECT
   signal_summary,
   article_text_norm,
   load_dt
-FROM deduped;
+FROM filtered;
 
 BEGIN
   DECLARE has_eyewear_source BOOL DEFAULT EXISTS (
@@ -105,9 +111,7 @@ BEGIN
       articles AS (
         SELECT *
         FROM `{{RSS_PROJECT_ID}}.{{RSS_DATASET}}.rss_articles_current`
-        WHERE eyewear_relevance_score >= 8
-           OR urgency_score >= 8
-           OR STARTS_WITH(feed_key, 'company_news_')
+        WHERE eyewear_relevance_score >= 14
       ),
       matches AS (
         SELECT
@@ -175,7 +179,7 @@ BEGIN
   END IF;
 END;
 
-CREATE OR REPLACE TABLE `{{RSS_PROJECT_ID}}.{{RSS_DATASET}}.rss_watchlist_current` AS
+CREATE OR REPLACE TABLE `{{RSS_PROJECT_ID}}.{{RSS_DATASET}}.alignment_watchlist_current` AS
 SELECT
   account_name AS `Account Name`,
   region_label AS `Region`,
@@ -191,8 +195,8 @@ SELECT
   article_summary AS `Article Summary`,
   article_link AS `Article Link`,
   feed_title AS `Feed Title`,
-  eyewear_relevance_score AS `Article Eyewear Relevance Score`,
-  urgency_score AS `Article Urgency Score`,
+  eyewear_relevance_score AS `Article Opportunity Signal Score`,
+  urgency_score AS `Article Momentum Score`,
   article_priority AS `Article Priority`,
   signal_summary AS `Article Signal Summary`,
   reason_to_contact AS `Reason To Contact`,
@@ -202,3 +206,7 @@ QUALIFY ROW_NUMBER() OVER (
   PARTITION BY account_name, article_key
   ORDER BY article_published_at DESC, eyewear_relevance_score DESC, urgency_score DESC
 ) = 1;
+
+CREATE OR REPLACE TABLE `{{RSS_PROJECT_ID}}.{{RSS_DATASET}}.rss_watchlist_current` AS
+SELECT *
+FROM `{{RSS_PROJECT_ID}}.{{RSS_DATASET}}.alignment_watchlist_current`;

@@ -58,15 +58,16 @@ def main() -> int:
           article_title,
           article_link,
           article_priority,
-          eyewear_relevance_score,
-          urgency_score,
+          eyewear_relevance_score AS opportunity_signal_score,
+          urgency_score AS momentum_score,
+          signal_summary,
           CAST(article_published_at AS STRING) AS article_published_at
         FROM `{config.rss_project_id}.{config.rss_dataset}.rss_articles_current`
         ORDER BY article_published_at DESC
         LIMIT 80
         """,
     )
-    rss_watchlist = _run_bq_json(
+    alignment_watchlist = _run_bq_json(
         project_id=config.rss_project_id,
         repo_root=repo_root,
         sql=f"""
@@ -78,9 +79,10 @@ def main() -> int:
           `Article Link`,
           `Feed Title`,
           `Article Priority`,
-          `Article Eyewear Relevance Score`,
-          `Article Urgency Score`
-        FROM `{config.rss_project_id}.{config.rss_dataset}.rss_watchlist_current`
+          `Article Opportunity Signal Score`,
+          `Article Momentum Score`,
+          `Article Signal Summary`
+        FROM `{config.rss_project_id}.{config.rss_dataset}.alignment_watchlist_current`
         ORDER BY `Article Published At` DESC
         LIMIT 40
         """,
@@ -138,8 +140,8 @@ def main() -> int:
         {
           "exported_at": exported_at,
           "article_count": len(rss_articles),
-          "watchlist_count": len(rss_watchlist),
-          "watchlist": rss_watchlist,
+          "alignment_watchlist_count": len(alignment_watchlist),
+          "alignment_watchlist": alignment_watchlist,
           "articles": rss_articles,
         },
     )
