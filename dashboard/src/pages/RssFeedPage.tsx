@@ -129,6 +129,18 @@ export function RssFeedPage() {
                           </button>
                           <button
                             onClick={() =>
+                              window.open(
+                                `https://www.google.com/search?q=${encodeURIComponent(
+                                  `site:osha.gov "${item["Account Name"]}"`
+                                )}`,
+                                "_blank"
+                              )
+                            }
+                          >
+                            OSHA Lookup
+                          </button>
+                          <button
+                            onClick={() =>
                               navigator.clipboard?.writeText(
                                 item["Article Signal Summary"] || item["Article Title"] || ""
                               )

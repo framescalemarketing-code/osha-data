@@ -510,6 +510,11 @@ scored AS (
       WHEN 'D' THEN 'Federal'
       ELSE 'Unknown'
     END AS owner_type_label,
+    CASE
+      WHEN ic.owner_type IN ('B', 'C', 'D') THEN 'Government'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^61') THEN 'Education'
+      ELSE 'Private'
+    END AS organization_class,
     CASE ic.insp_type
       WHEN 'A' THEN 'Accident'
       WHEN 'B' THEN 'Complaint'
@@ -723,6 +728,12 @@ scored AS (
           WHEN ic.inspections_90d = 1 THEN 4
           ELSE 0
         END
+      + CASE
+          WHEN ic.owner_type = 'A' AND NOT REGEXP_CONTAINS(ic.naics_code, r'^61') THEN 4
+          WHEN ic.owner_type IN ('B', 'C', 'D') THEN -4
+          WHEN REGEXP_CONTAINS(ic.naics_code, r'^61') THEN -4
+          ELSE 0
+        END
     ) AS followup_score
   FROM inspection_company ic
   LEFT JOIN violation_metrics vm ON ic.activity_nr = vm.activity_nr
@@ -768,6 +779,7 @@ SELECT
   naics2 AS `NAICS 2-Digit`,
   industry_segment AS `Industry Segment`,
   owner_type_label AS `Ownership Type`,
+  organization_class AS `Organization Class`,
   inspection_type_label AS `Inspection Type`,
   open_case_date AS `Case Open Date`,
   days_since_open AS `Days Since Case Opened`,
@@ -1482,6 +1494,11 @@ scored AS (
       WHEN 'D' THEN 'Federal'
       ELSE 'Unknown'
     END AS owner_type_label,
+    CASE
+      WHEN ic.owner_type IN ('B', 'C', 'D') THEN 'Government'
+      WHEN REGEXP_CONTAINS(ic.naics_code, r'^61') THEN 'Education'
+      ELSE 'Private'
+    END AS organization_class,
     CASE ic.insp_type
       WHEN 'A' THEN 'Accident'
       WHEN 'B' THEN 'Complaint'
@@ -1695,6 +1712,12 @@ scored AS (
           WHEN ic.inspections_90d = 1 THEN 4
           ELSE 0
         END
+      + CASE
+          WHEN ic.owner_type = 'A' AND NOT REGEXP_CONTAINS(ic.naics_code, r'^61') THEN 4
+          WHEN ic.owner_type IN ('B', 'C', 'D') THEN -4
+          WHEN REGEXP_CONTAINS(ic.naics_code, r'^61') THEN -4
+          ELSE 0
+        END
     ) AS followup_score
   FROM inspection_company ic
   LEFT JOIN violation_metrics vm ON ic.activity_nr = vm.activity_nr
@@ -1740,6 +1763,7 @@ SELECT
   naics2 AS `NAICS 2-Digit`,
   industry_segment AS `Industry Segment`,
   owner_type_label AS `Ownership Type`,
+  organization_class AS `Organization Class`,
   inspection_type_label AS `Inspection Type`,
   open_case_date AS `Case Open Date`,
   days_since_open AS `Days Since Case Opened`,

@@ -194,6 +194,11 @@ def main() -> int:
           SUBSTR(REGEXP_REPLACE(COALESCE(`NAICS Code`, ''), r'[^0-9]', ''), 1, 2) AS naics2,
           `Industry Segment` AS industry_segment,
           `Overall Sales Priority` AS overall_sales_priority,
+          `Site Address` AS site_address,
+          `Site City` AS site_city,
+          `Site ZIP` AS site_zip,
+          `Ownership Type` AS ownership_type,
+          `Organization Class` AS organization_class,
           `Recent Inspection Context` AS recent_inspection_context,
           `Overall History` AS overall_history,
           `Reason To Contact` AS reason_to_contact

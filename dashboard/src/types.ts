@@ -80,6 +80,11 @@ export type PublicAccountItem = {
   naics2: string;
   industry_segment: string;
   overall_sales_priority?: string;
+  site_address?: string;
+  site_city?: string;
+  site_zip?: string;
+  ownership_type?: string;
+  organization_class?: string;
   recent_inspection_context?: string;
   overall_history?: string;
   reason_to_contact?: string;

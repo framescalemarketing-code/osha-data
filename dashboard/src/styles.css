@@ -240,6 +240,18 @@ th {
   font-size: 0.76rem;
   white-space: nowrap;
 }
+.pill-private {
+  background: rgba(34,139,34,0.12);
+  color: #1a7a1a;
+}
+.pill-government {
+  background: rgba(70,130,180,0.12);
+  color: #2c6e9e;
+}
+.pill-education {
+  background: rgba(148,103,189,0.12);
+  color: #6a3d9a;
+}
 
 /* ─── Buttons ─── */
 button {

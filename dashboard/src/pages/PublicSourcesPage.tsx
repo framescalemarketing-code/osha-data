@@ -49,7 +49,9 @@ export function PublicSourcesPage() {
           (acct.recent_inspection_context ?? "").toLowerCase().includes(q) ||
           (acct.overall_history ?? "").toLowerCase().includes(q) ||
           (acct.reason_to_contact ?? "").toLowerCase().includes(q) ||
-          (acct.industry_segment ?? "").toLowerCase().includes(q)
+          (acct.industry_segment ?? "").toLowerCase().includes(q) ||
+          (acct.site_city ?? "").toLowerCase().includes(q) ||
+          (acct.organization_class ?? "").toLowerCase().includes(q)
         );
       }
       return true;
@@ -111,6 +113,8 @@ export function PublicSourcesPage() {
                 <tr>
                   <th>Account</th>
                   <th>Region</th>
+                  <th>Site Location</th>
+                  <th>Org Type</th>
                   <th>Priority</th>
                   <th>Recent Inspection</th>
                   <th>Overall History</th>
@@ -130,6 +134,14 @@ export function PublicSourcesPage() {
                       )}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>{acct.region}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {[acct.site_city, acct.site_zip].filter(Boolean).join(", ") || <span style={{ color: "var(--muted)" }}>&mdash;</span>}
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {acct.organization_class
+                        ? <span className={`pill pill-${acct.organization_class.toLowerCase()}`}>{acct.organization_class}</span>
+                        : <span style={{ color: "var(--muted)" }}>&mdash;</span>}
+                    </td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {acct.overall_sales_priority
                         ? <span className="pill">{acct.overall_sales_priority}</span>
@@ -155,6 +167,14 @@ export function PublicSourcesPage() {
                           }}
                         >
                           Find on LinkedIn
+                        </button>
+                        <button
+                          onClick={() => {
+                            const q = encodeURIComponent(`site:osha.gov "${acct.account_name}"`);
+                            window.open(`https://www.google.com/search?q=${q}`, "_blank");
+                          }}
+                        >
+                          OSHA Lookup
                         </button>
                       </div>
                     </td>
