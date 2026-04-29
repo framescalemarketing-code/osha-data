@@ -18,6 +18,7 @@ from pipeline.nih_signals import run_nih_signals_ingest
 from pipeline.osha_local_downloads import run_osha_local_downloads_ingest
 from pipeline.public_signals import run_public_signals_ingest
 from pipeline.rss_signals import run_rss_signals_ingest
+from pipeline.sql_refresh import run_sql_refresh
 
 
 ENDPOINT_SCHEMAS = {
@@ -47,7 +48,7 @@ class IngestResult:
 
 def run_preflight_checks(config: PipelineConfig) -> None:
     if not config.api_key.strip():
-        raise RuntimeError("DOL_API_KEY is missing. Set it in environment or .env.")
+        raise RuntimeError("DOL_API_KEY is missing. Set it in environment or .env.local.")
     config.paths.data_dir.mkdir(parents=True, exist_ok=True)
     report = validate_compliance(config.compliance)
     if report.checks_failed > 0:
@@ -195,13 +196,10 @@ def run_enrichment_ingest(*, config: PipelineConfig, client: DolApiClient) -> No
             allow_quoted_newlines=True,
         )
 
-    # Use utf-8-sig so that a UTF-8 BOM at the start of the file is stripped
-    # transparently; BigQuery rejects the BOM character (\357) as illegal input.
-    refresh_sql = config.paths.sql_refresh_file.read_text(encoding="utf-8-sig")
-    bq_query_sql(
-        repo_root=config.paths.repo_root,
+    run_sql_refresh(
+        config=config,
+        sql_filename="refresh_sales_followup_v2.sql",
         project_id=config.project_id,
-        sql_text=refresh_sql,
     )
 
 

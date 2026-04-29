@@ -119,10 +119,12 @@ class PipelineConfig:
 
 
 def load_pipeline_config(repo_root: Path) -> PipelineConfig:
-    dotenv_path = repo_root / ".env"
+    dotenv_path_local = repo_root / ".env.local"
+    dotenv_path_fallback = repo_root / ".env"
+    dotenv_path = dotenv_path_local if dotenv_path_local.exists() else dotenv_path_fallback
     dotenv_values = load_dotenv(dotenv_path)
 
-    project_id = env_value("PROJECT_ID", dotenv_values, "cold-lead-pipeline-dashboard")
+    project_id = env_value("PROJECT_ID", dotenv_values, "cold-lead-pipeline")
     dataset = env_value("BQ_DATASET", dotenv_values, "osha_raw")
     public_project_id = env_value("PUBLIC_PROJECT_ID", dotenv_values, project_id)
     public_dataset = env_value("PUBLIC_BQ_DATASET", dotenv_values, "public_signals")

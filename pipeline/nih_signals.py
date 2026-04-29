@@ -145,9 +145,14 @@ def _project_terms(result: dict[str, Any]) -> str:
     return " | ".join(names[:20])
 
 
-def fetch_nih_projects(*, out_csv: Path, lookback_years: int) -> int:
+def fetch_nih_projects(*, out_csv: Path, lookback_years: int, since_date: str) -> int:
     current_year = date.today().year
-    fiscal_years = list(range(current_year - max(lookback_years, 1) + 1, current_year + 1))
+    try:
+        min_year = date.fromisoformat(since_date).year
+    except (TypeError, ValueError):
+        min_year = current_year - max(lookback_years, 1) + 1
+    min_year = max(min_year, 1900)
+    fiscal_years = list(range(min_year, current_year + 1))
     limit = 250
     load_dt = _utc_now_iso()
     out_rows: list[list[str]] = []
@@ -256,6 +261,7 @@ def run_nih_signals_ingest(config: PipelineConfig) -> None:
     row_count = fetch_nih_projects(
         out_csv=out_csv,
         lookback_years=config.nih_lookback_years,
+        since_date=config.since_date,
     )
     logging.info("NIH project rows written: %s", row_count)
 

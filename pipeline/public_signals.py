@@ -304,7 +304,11 @@ def run_public_signals_ingest(config: PipelineConfig) -> None:
 
     census_year = int(getattr(config, "census_cbp_year", 2022))
     usaspending_end = date.today().isoformat()
-    usaspending_start = (date.today() - timedelta(days=365 * 2)).isoformat()
+    try:
+        parsed_since = date.fromisoformat(str(config.since_date))
+        usaspending_start = parsed_since.isoformat()
+    except (TypeError, ValueError):
+        usaspending_start = (date.today() - timedelta(days=365 * 2)).isoformat()
 
     logging.info("Pulling Census CBP data (year=%s)...", census_year)
     census_rows = fetch_census_cbp_ca(

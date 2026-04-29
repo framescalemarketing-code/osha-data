@@ -25,7 +25,7 @@ class FdaSignalsTests(unittest.TestCase):
             data_dir=repo_root / "data",
             sql_dir=repo_root / "sql",
             sql_refresh_file=repo_root / "sql" / "refresh_sales_followup_v2.sql",
-            dotenv_path=repo_root / ".env",
+            dotenv_path=repo_root / ".env.local",
         )
         api_safety = ApiSafetyConfig(
             min_interval_seconds=1.0,
@@ -49,9 +49,9 @@ class FdaSignalsTests(unittest.TestCase):
         return PipelineConfig(
             project_id="osha-project",
             dataset="osha_raw",
-            public_project_id="cold-lead-pipeline-dashboard",
+            public_project_id="cold-lead-pipeline",
             public_dataset="public_signals",
-            rss_project_id="cold-lead-pipeline-dashboard",
+            rss_project_id="cold-lead-pipeline",
             rss_dataset="rss_feed",
             rss_feed_urls="demo|https://example.com/rss.xml",
             rss_lookback_days=30,
@@ -118,7 +118,7 @@ class FdaSignalsTests(unittest.TestCase):
             self.assertIn("fda-project", kwargs["sql_text"])
             self.assertIn("epa-project", kwargs["sql_text"])
             self.assertIn("osha-project", kwargs["sql_text"])
-            self.assertIn("cold-lead-pipeline-dashboard", kwargs["sql_text"])
+            self.assertIn("cold-lead-pipeline", kwargs["sql_text"])
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

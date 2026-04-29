@@ -76,7 +76,7 @@ class OshaLocalDownloadsTests(unittest.TestCase):
                     data_dir=data_dir,
                     sql_dir=sql_dir,
                     sql_refresh_file=sql_dir / "refresh_sales_followup_v2.sql",
-                    dotenv_path=repo_root / ".env",
+                    dotenv_path=repo_root / ".env.local",
                 ),
                 api_safety=ApiSafetyConfig(
                     min_interval_seconds=1.0,

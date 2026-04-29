@@ -194,6 +194,14 @@ def _zip_prefix_query(prefixes: tuple[str, ...]) -> str:
     return f"registration.state_code:CA AND ({zip_terms})"
 
 
+def _window_start_date(*, since_date: str, lookback_years: int) -> date:
+    try:
+        return date.fromisoformat(since_date)
+    except (TypeError, ValueError):
+        today = date.today()
+        return date(today.year - max(lookback_years, 1), 1, 1)
+
+
 def _extract_join_keys(openfda_obj: Any) -> list[tuple[str, str]]:
     if not isinstance(openfda_obj, dict):
         return [("none", "")]
@@ -330,10 +338,11 @@ def fetch_device_510k_ca(
     *,
     api_key: str,
     out_csv: Path,
+    since_date: str,
     lookback_years: int,
 ) -> int:
     today = date.today()
-    start_date = date(today.year - max(lookback_years, 1), 1, 1)
+    start_date = _window_start_date(since_date=since_date, lookback_years=lookback_years)
     search = f"state:CA AND decision_date:[{start_date.isoformat()} TO {today.isoformat()}]"
     rows, source_last_updated = _openfda_search_all(
         endpoint="device/510k",
@@ -406,10 +415,11 @@ def fetch_device_pma_ca(
     *,
     api_key: str,
     out_csv: Path,
+    since_date: str,
     lookback_years: int,
 ) -> int:
     today = date.today()
-    start_date = date(today.year - max(lookback_years, 1), 1, 1)
+    start_date = _window_start_date(since_date=since_date, lookback_years=lookback_years)
     search = f"state:CA AND decision_date:[{start_date.isoformat()} TO {today.isoformat()}]"
     rows, source_last_updated = _openfda_search_all(
         endpoint="device/pma",
@@ -496,6 +506,7 @@ def run_fda_signals_ingest(config: PipelineConfig) -> None:
     k510_rows = fetch_device_510k_ca(
         api_key=config.openfda_api_key,
         out_csv=k510_csv,
+        since_date=config.since_date,
         lookback_years=config.fda_lookback_years,
     )
     logging.info("OpenFDA 510(k) rows written: %s", k510_rows)
@@ -504,6 +515,7 @@ def run_fda_signals_ingest(config: PipelineConfig) -> None:
     pma_rows = fetch_device_pma_ca(
         api_key=config.openfda_api_key,
         out_csv=pma_csv,
+        since_date=config.since_date,
         lookback_years=config.fda_lookback_years,
     )
     logging.info("OpenFDA PMA rows written: %s", pma_rows)

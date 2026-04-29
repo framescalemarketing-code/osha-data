@@ -1,4 +1,6 @@
 .env
+.env.local
+.env.*.local
 .history/
 .vite/
 data/
@@ -10,6 +12,8 @@ __pycache__/
 .tmp-tests/
 dashboard/node_modules/
 dashboard/dist/
+dashboard/.runtime/
 dashboard-dev*.log
 package-lock.json
+metabase/*.json
 
