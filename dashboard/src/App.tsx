@@ -10,6 +10,10 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   Drawer,
   FormControl,
@@ -32,10 +36,12 @@ import {
   TableRow,
   TextField,
   Toolbar,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AssessmentRoundedIcon from "@mui/icons-material/AssessmentRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
 import FilterAltRoundedIcon from "@mui/icons-material/FilterAltRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import FolderSpecialRoundedIcon from "@mui/icons-material/FolderSpecialRounded";
@@ -46,6 +52,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import SourceRoundedIcon from "@mui/icons-material/SourceRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import { leads as fallbackLeads } from "./data";
 import { toViolationDetails } from "./oshaStandards";
 import type { DashboardSettings, IncidentDateSource, IncidentType, LeadRecord, LeadTier, NavView } from "./types";
@@ -106,6 +113,55 @@ const CONTACT_READY_ACTIONS: LeadRecord["action"][] = [
 
 const INITIAL_RENDER_LIMIT = 60;
 const RENDER_STEP = 60;
+const BAD_LEADS_STORAGE_KEY = "osha_dashboard_bad_leads_v1";
+
+type BadLeadReason =
+  | "wrong_industry"
+  | "consumer_business"
+  | "out_of_business"
+  | "too_small"
+  | "duplicate"
+  | "other";
+
+const BAD_LEAD_REASON_LABELS: Record<BadLeadReason, string> = {
+  wrong_industry: "Wrong industry (e.g., salon, restaurant, retail)",
+  consumer_business: "Consumer business — not B2B",
+  out_of_business: "No longer in business",
+  too_small: "Too small / sole proprietor",
+  duplicate: "Duplicate of another lead",
+  other: "Other",
+};
+
+type BadLeadEntry = {
+  leadId: string;
+  company: string;
+  industry: string;
+  city: string;
+  region: string;
+  naicsCode?: string;
+  leadTier: string;
+  reason: BadLeadReason;
+  markedAt: string;
+};
+
+function loadBadLeads(): BadLeadEntry[] {
+  try {
+    const raw = localStorage.getItem(BAD_LEADS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBadLeads(entries: BadLeadEntry[]): void {
+  try {
+    localStorage.setItem(BAD_LEADS_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // Storage quota — silently ignore
+  }
+}
 
 function matchesSearch(lead: LeadRecord, query: string) {
   if (!query.trim()) {
@@ -635,6 +691,12 @@ export default function App() {
     "ppe-opportunity": INITIAL_RENDER_LIMIT,
   });
 
+  // Bad lead state — persisted to localStorage, filtered out of all views
+  const [badLeads, setBadLeads] = React.useState<BadLeadEntry[]>(() => loadBadLeads());
+  const badLeadIds = React.useMemo(() => new Set(badLeads.map((b) => b.leadId)), [badLeads]);
+  const [badLeadDialogLead, setBadLeadDialogLead] = React.useState<LeadRecord | null>(null);
+  const [badLeadReason, setBadLeadReason] = React.useState<BadLeadReason>("wrong_industry");
+
   const loadLeads = React.useCallback(async (force = false) => {
     setLoadingLeads(true);
     setLeadLoadError(null);
@@ -791,7 +853,40 @@ export default function App() {
     }
   };
 
-  const leadData = liveLeads.length > 0 ? liveLeads : fallbackLeads;
+  const onConfirmBadLead = (lead: LeadRecord, reason: BadLeadReason) => {
+    const entry: BadLeadEntry = {
+      leadId: lead.id,
+      company: lead.company,
+      industry: lead.industry,
+      city: lead.city,
+      region: lead.region,
+      naicsCode: String((lead as unknown as Record<string, unknown>).naicsCode || ""),
+      leadTier: lead.leadTier ?? "P3 Industry Fit",
+      reason,
+      markedAt: new Date().toISOString(),
+    };
+    const updated = [entry, ...badLeads.filter((b) => b.leadId !== lead.id)];
+    setBadLeads(updated);
+    saveBadLeads(updated);
+    setBadLeadDialogLead(null);
+    // Fire-and-forget to API for server-side logging
+    fetch("/api/bad-leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+    }).catch(() => {});
+  };
+
+  const onUnmarkBadLead = (leadId: string) => {
+    const updated = badLeads.filter((b) => b.leadId !== leadId);
+    setBadLeads(updated);
+    saveBadLeads(updated);
+  };
+
+  const leadData = React.useMemo(
+    () => (liveLeads.length > 0 ? liveLeads : fallbackLeads).filter((l) => !badLeadIds.has(l.id)),
+    [liveLeads, badLeadIds],
+  );
 
   const regionOptions = React.useMemo(
     () => Array.from(new Set(leadData.map((lead) => lead.region).filter(Boolean))).sort(),
@@ -1478,6 +1573,16 @@ export default function App() {
                           <Box key={lead.id}>
                             <MemoLeadCard lead={lead} compact={settings.compactCards} />
                             <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="error"
+                              startIcon={<BlockRoundedIcon />}
+                              onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
+                              sx={{ mt: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
+                            >
+                              Not a Fit
+                            </Button>
                           </Box>
                         ))}
                         {hotEyeLeads.length === 0 ? (
@@ -1526,6 +1631,16 @@ export default function App() {
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     <MemoLeadCard lead={lead} compact={settings.compactCards} />
                     <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      startIcon={<BlockRoundedIcon />}
+                      onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
+                      sx={{ alignSelf: "flex-start", opacity: 0.7, "&:hover": { opacity: 1 } }}
+                    >
+                      Not a Fit
+                    </Button>
                   </Stack>
                 </Grid>
               ))}
@@ -1553,6 +1668,16 @@ export default function App() {
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     <MemoLeadCard lead={lead} compact={settings.compactCards} />
                     <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      startIcon={<BlockRoundedIcon />}
+                      onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
+                      sx={{ alignSelf: "flex-start", opacity: 0.7, "&:hover": { opacity: 1 } }}
+                    >
+                      Not a Fit
+                    </Button>
                   </Stack>
                 </Grid>
               ))}
@@ -1580,6 +1705,16 @@ export default function App() {
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     <MemoLeadCard lead={lead} compact={settings.compactCards} />
                     <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      startIcon={<BlockRoundedIcon />}
+                      onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
+                      sx={{ alignSelf: "flex-start", opacity: 0.7, "&:hover": { opacity: 1 } }}
+                    >
+                      Not a Fit
+                    </Button>
                   </Stack>
                 </Grid>
               ))}
@@ -1756,10 +1891,98 @@ export default function App() {
                   </CardContent>
                 </Card>
               </Grid>
+              {badLeads.length > 0 ? (
+                <Grid size={{ xs: 12 }}>
+                  <Card>
+                    <CardContent>
+                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+                        <BlockRoundedIcon color="error" fontSize="small" />
+                        <Typography variant="h6">Dismissed Leads ({badLeads.length})</Typography>
+                      </Stack>
+                      <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+                        These companies were marked as not a fit. Dismissals are stored locally in your browser.
+                        This data helps refine lead scoring — the reason and industry info are logged for future
+                        filtering improvements.
+                      </Typography>
+                      <Stack spacing={1}>
+                        {badLeads.map((entry) => (
+                          <Box
+                            key={entry.leadId}
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1.5,
+                              borderRadius: 2,
+                              border: "1px solid rgba(15, 23, 42, 0.08)",
+                              p: 1.5,
+                            }}
+                          >
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography variant="body2" fontWeight={600} noWrap>
+                                {entry.company}
+                              </Typography>
+                              <Typography color="text.secondary" variant="caption">
+                                {entry.industry} · {entry.city}, {entry.region} · {entry.leadTier}
+                              </Typography>
+                              <br />
+                              <Typography color="error.main" variant="caption">
+                                {BAD_LEAD_REASON_LABELS[entry.reason]} · {new Date(entry.markedAt).toLocaleDateString()}
+                              </Typography>
+                            </Box>
+                            <Tooltip title="Restore lead">
+                              <IconButton size="small" onClick={() => onUnmarkBadLead(entry.leadId)}>
+                                <UndoRoundedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ) : null}
             </Grid>
           ) : null}
         </Stack>
       </Box>
+
+      {/* Bad Lead confirmation dialog */}
+      <Dialog
+        open={badLeadDialogLead !== null}
+        onClose={() => setBadLeadDialogLead(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Mark as Not a Fit</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            <strong>{badLeadDialogLead?.company}</strong> will be hidden from the dashboard. Choose a reason to
+            help improve lead scoring:
+          </Typography>
+          <FormControl fullWidth size="small">
+            <InputLabel>Reason</InputLabel>
+            <Select
+              label="Reason"
+              value={badLeadReason}
+              onChange={(e) => setBadLeadReason(e.target.value as BadLeadReason)}
+            >
+              {(Object.entries(BAD_LEAD_REASON_LABELS) as [BadLeadReason, string][]).map(([value, label]) => (
+                <MenuItem key={value} value={value}>{label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBadLeadDialogLead(null)}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => badLeadDialogLead && onConfirmBadLead(badLeadDialogLead, badLeadReason)}
+          >
+            Dismiss Lead
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

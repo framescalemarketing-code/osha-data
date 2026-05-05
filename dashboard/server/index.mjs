@@ -1134,6 +1134,54 @@ app.get("/api/pull-history", async (_req, res) => {
   });
 });
 
+// Bad leads endpoint — logged to a local JSON file for durable storage
+const badLeadsFile = path.resolve(runtimeDir, "bad-leads.json");
+
+async function readBadLeads() {
+  try {
+    const data = await fs.readFile(badLeadsFile, "utf8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+async function writeBadLeads(map) {
+  await fs.writeFile(badLeadsFile, JSON.stringify(map, null, 2), "utf8");
+}
+
+app.get("/api/bad-leads", async (_req, res) => {
+  const map = await readBadLeads();
+  res.json({ ok: true, count: Object.keys(map).length, badLeads: Object.values(map) });
+});
+
+app.post("/api/bad-leads", async (req, res) => {
+  const { leadId, company, industry, city, region, naicsCode, leadTier, reason } = req.body || {};
+  const allowedReasons = new Set(["wrong_industry", "consumer_business", "out_of_business", "too_small", "duplicate", "other"]);
+  if (!leadId || typeof leadId !== "string") {
+    res.status(400).json({ ok: false, error: "leadId is required." });
+    return;
+  }
+  if (reason && !allowedReasons.has(reason)) {
+    res.status(400).json({ ok: false, error: "Invalid reason." });
+    return;
+  }
+  const map = await readBadLeads();
+  map[String(leadId).trim()] = {
+    leadId: String(leadId).trim(),
+    company: String(company || "").trim().slice(0, 200),
+    industry: String(industry || "").trim().slice(0, 100),
+    city: String(city || "").trim().slice(0, 100),
+    region: String(region || "").trim().slice(0, 100),
+    naicsCode: String(naicsCode || "").trim().slice(0, 20),
+    leadTier: String(leadTier || "").trim().slice(0, 50),
+    reason: String(reason || "other").trim(),
+    markedAt: new Date().toISOString(),
+  };
+  await writeBadLeads(map);
+  res.json({ ok: true });
+});
+
 app.post("/api/refresh-leads", async (_req, res) => {
   if (currentPull?.status === "running") {
     res.status(409).json({
