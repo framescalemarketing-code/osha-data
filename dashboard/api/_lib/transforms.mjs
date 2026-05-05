@@ -217,6 +217,7 @@ export function toLeadRecord(row) {
       row["qualifies_incident_3yr"] === true
       || String(row["qualifies_incident_3yr"] || "").toLowerCase() === "true",
     city: row["site_city"] || "",
+    naicsCode: normalizeNaicsCode(row["naics_code"]),
     industry: resolveIndustryLabel(row),
     ownerType: row["ownership_type"] || "",
 

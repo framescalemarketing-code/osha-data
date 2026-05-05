@@ -98,6 +98,7 @@ export type LeadRecord = {
   totalInspectionCount: number;
 
   // company info
+  naicsCode?: string;
   employeeBand: string;
 
   // dates

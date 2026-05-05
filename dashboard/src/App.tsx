@@ -114,6 +114,7 @@ const CONTACT_READY_ACTIONS: LeadRecord["action"][] = [
 const INITIAL_RENDER_LIMIT = 60;
 const RENDER_STEP = 60;
 const BAD_LEADS_STORAGE_KEY = "osha_dashboard_bad_leads_v1";
+const NAICS_RULES_STORAGE_KEY = "osha_naics_rules_v1";
 
 type BadLeadReason =
   | "wrong_industry"
@@ -130,6 +131,18 @@ const BAD_LEAD_REASON_LABELS: Record<BadLeadReason, string> = {
   too_small: "Too small / sole proprietor",
   duplicate: "Duplicate of another lead",
   other: "Other",
+};
+
+// Reasons that should generate a broad NAICS suppression rule (suppress the
+// entire 4-digit NAICS subsector so similar companies are auto-filtered).
+const BROAD_SUPPRESS_REASONS: BadLeadReason[] = ["wrong_industry", "consumer_business"];
+
+type NaicsRule = {
+  prefix: string;    // 4-digit NAICS prefix (e.g. "7225") or 6-digit for narrow suppression
+  label: string;     // human-readable industry label
+  reason: BadLeadReason;
+  exampleCompany: string;
+  addedAt: string;
 };
 
 type BadLeadEntry = {
@@ -161,6 +174,23 @@ function saveBadLeads(entries: BadLeadEntry[]): void {
   } catch {
     // Storage quota — silently ignore
   }
+}
+
+function loadNaicsRules(): NaicsRule[] {
+  try {
+    const raw = localStorage.getItem(NAICS_RULES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveNaicsRules(rules: NaicsRule[]): void {
+  try {
+    localStorage.setItem(NAICS_RULES_STORAGE_KEY, JSON.stringify(rules));
+  } catch {}
 }
 
 function matchesSearch(lead: LeadRecord, query: string) {
@@ -697,6 +727,9 @@ export default function App() {
   const [badLeadDialogLead, setBadLeadDialogLead] = React.useState<LeadRecord | null>(null);
   const [badLeadReason, setBadLeadReason] = React.useState<BadLeadReason>("wrong_industry");
 
+  // NAICS suppression rules — auto-filter companies in the same subsector as dismissed leads
+  const [naicsRules, setNaicsRules] = React.useState<NaicsRule[]>(() => loadNaicsRules());
+
   const loadLeads = React.useCallback(async (force = false) => {
     setLoadingLeads(true);
     setLeadLoadError(null);
@@ -860,14 +893,34 @@ export default function App() {
       industry: lead.industry,
       city: lead.city,
       region: lead.region,
-      naicsCode: String((lead as unknown as Record<string, unknown>).naicsCode || ""),
+      naicsCode: lead.naicsCode,
       leadTier: lead.leadTier ?? "P3 Industry Fit",
       reason,
       markedAt: new Date().toISOString(),
     };
-    const updated = [entry, ...badLeads.filter((b) => b.leadId !== lead.id)];
-    setBadLeads(updated);
-    saveBadLeads(updated);
+    const updatedBadLeads = [entry, ...badLeads.filter((b) => b.leadId !== lead.id)];
+    setBadLeads(updatedBadLeads);
+    saveBadLeads(updatedBadLeads);
+
+    // For industry/consumer-type dismissals, create a NAICS suppression rule
+    // that auto-hides all companies in the same subsector (4-digit prefix).
+    if (BROAD_SUPPRESS_REASONS.includes(reason) && lead.naicsCode && lead.naicsCode.length >= 4) {
+      const prefix = lead.naicsCode.slice(0, 4);
+      const alreadyExists = naicsRules.some((r) => r.prefix === prefix);
+      if (!alreadyExists) {
+        const newRule: NaicsRule = {
+          prefix,
+          label: lead.industry,
+          reason,
+          exampleCompany: lead.company,
+          addedAt: new Date().toISOString(),
+        };
+        const updatedRules = [newRule, ...naicsRules];
+        setNaicsRules(updatedRules);
+        saveNaicsRules(updatedRules);
+      }
+    }
+
     setBadLeadDialogLead(null);
     // Fire-and-forget to API for server-side logging
     fetch("/api/bad-leads", {
@@ -883,10 +936,37 @@ export default function App() {
     saveBadLeads(updated);
   };
 
-  const leadData = React.useMemo(
-    () => (liveLeads.length > 0 ? liveLeads : fallbackLeads).filter((l) => !badLeadIds.has(l.id)),
-    [liveLeads, badLeadIds],
-  );
+  const onRemoveNaicsRule = (prefix: string) => {
+    const updated = naicsRules.filter((r) => r.prefix !== prefix);
+    setNaicsRules(updated);
+    saveNaicsRules(updated);
+  };
+
+  const leadData = React.useMemo(() => {
+    const allLeads = liveLeads.length > 0 ? liveLeads : fallbackLeads;
+    return allLeads.filter((l) => {
+      if (badLeadIds.has(l.id)) return false;
+      if (naicsRules.length > 0 && l.naicsCode) {
+        for (const rule of naicsRules) {
+          if (l.naicsCode.startsWith(rule.prefix)) return false;
+        }
+      }
+      return true;
+    });
+  }, [liveLeads, badLeadIds, naicsRules]);
+
+  const autoSuppressedCount = React.useMemo(() => {
+    const allLeads = liveLeads.length > 0 ? liveLeads : fallbackLeads;
+    return allLeads.filter((l) => {
+      if (badLeadIds.has(l.id)) return false; // already counted as manual dismiss
+      if (naicsRules.length > 0 && l.naicsCode) {
+        for (const rule of naicsRules) {
+          if (l.naicsCode.startsWith(rule.prefix)) return true;
+        }
+      }
+      return false;
+    }).length;
+  }, [liveLeads, badLeadIds, naicsRules]);
 
   const regionOptions = React.useMemo(
     () => Array.from(new Set(leadData.map((lead) => lead.region).filter(Boolean))).sort(),
@@ -1101,7 +1181,7 @@ export default function App() {
     "ppe-opportunity": ppeOpportunityLeads.length,
     "source-signals": visibleLeads.length,
     "saved-views": 4,
-    settings: "",
+    settings: badLeads.length + naicsRules.length > 0 ? badLeads.length + naicsRules.length : "",
   };
 
   const latestPull = pullHistory[0] || null;
@@ -1900,9 +1980,7 @@ export default function App() {
                         <Typography variant="h6">Dismissed Leads ({badLeads.length})</Typography>
                       </Stack>
                       <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-                        These companies were marked as not a fit. Dismissals are stored locally in your browser.
-                        This data helps refine lead scoring — the reason and industry info are logged for future
-                        filtering improvements.
+                        These companies were manually dismissed. Dismissals are stored locally in your browser.
                       </Typography>
                       <Stack spacing={1}>
                         {badLeads.map((entry) => (
@@ -1941,6 +2019,74 @@ export default function App() {
                   </Card>
                 </Grid>
               ) : null}
+              {naicsRules.length > 0 ? (
+                <Grid size={{ xs: 12 }}>
+                  <Card>
+                    <CardContent>
+                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                        <BlockRoundedIcon color="warning" fontSize="small" />
+                        <Typography variant="h6">Industry Suppression Rules ({naicsRules.length})</Typography>
+                        {autoSuppressedCount > 0 ? (
+                          <Chip
+                            label={`${autoSuppressedCount} leads auto-hidden`}
+                            size="small"
+                            color="warning"
+                            variant="outlined"
+                          />
+                        ) : null}
+                      </Stack>
+                      <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+                        When you dismiss a hair salon or restaurant, a rule is added here that automatically
+                        hides all other companies in the same NAICS subsector. Remove a rule to bring those
+                        leads back.
+                      </Typography>
+                      <Stack spacing={1}>
+                        {naicsRules.map((rule) => {
+                          const hiddenCount = (liveLeads.length > 0 ? liveLeads : fallbackLeads).filter(
+                            (l) => !badLeadIds.has(l.id) && l.naicsCode?.startsWith(rule.prefix),
+                          ).length;
+                          return (
+                            <Box
+                              key={rule.prefix}
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1.5,
+                                borderRadius: 2,
+                                border: "1px solid rgba(245, 158, 11, 0.25)",
+                                bgcolor: "rgba(245, 158, 11, 0.04)",
+                                p: 1.5,
+                              }}
+                            >
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight={600}>
+                                  NAICS {rule.prefix}xx — {rule.label}
+                                </Typography>
+                                <Typography color="text.secondary" variant="caption">
+                                  Triggered by: {rule.exampleCompany} · {BAD_LEAD_REASON_LABELS[rule.reason]}
+                                </Typography>
+                                {hiddenCount > 0 ? (
+                                  <>
+                                    <br />
+                                    <Typography color="warning.main" variant="caption">
+                                      Hiding {hiddenCount} lead{hiddenCount !== 1 ? "s" : ""} with this NAICS code
+                                    </Typography>
+                                  </>
+                                ) : null}
+                              </Box>
+                              <Tooltip title="Remove rule (restore similar leads)">
+                                <IconButton size="small" onClick={() => onRemoveNaicsRule(rule.prefix)}>
+                                  <UndoRoundedIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          );
+                        })}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ) : null}
             </Grid>
           ) : null}
         </Stack>
@@ -1956,10 +2102,9 @@ export default function App() {
         <DialogTitle>Mark as Not a Fit</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ mb: 2 }}>
-            <strong>{badLeadDialogLead?.company}</strong> will be hidden from the dashboard. Choose a reason to
-            help improve lead scoring:
+            <strong>{badLeadDialogLead?.company}</strong> will be hidden from the dashboard. Choose a reason:
           </Typography>
-          <FormControl fullWidth size="small">
+          <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
             <InputLabel>Reason</InputLabel>
             <Select
               label="Reason"
@@ -1971,6 +2116,15 @@ export default function App() {
               ))}
             </Select>
           </FormControl>
+          {BROAD_SUPPRESS_REASONS.includes(badLeadReason) && badLeadDialogLead?.naicsCode && (
+            <Alert severity="info" sx={{ mt: 1 }}>
+              <Typography variant="caption">
+                A suppression rule for NAICS <strong>{badLeadDialogLead.naicsCode.slice(0, 4)}xx</strong> (
+                {badLeadDialogLead.industry}) will be created. Other companies in the same industry category
+                will be automatically hidden. You can remove this rule in Settings.
+              </Typography>
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBadLeadDialogLead(null)}>Cancel</Button>
