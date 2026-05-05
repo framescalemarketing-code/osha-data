@@ -111,8 +111,8 @@ const CONTACT_READY_ACTIONS: LeadRecord["action"][] = [
   "Call This Week",
 ];
 
-const INITIAL_RENDER_LIMIT = 60;
-const RENDER_STEP = 60;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const DEFAULT_PAGE_SIZE = 25;
 const BAD_LEADS_STORAGE_KEY = "osha_dashboard_bad_leads_v1";
 const NAICS_RULES_STORAGE_KEY = "osha_naics_rules_v1";
 const OUTCOMES_STORAGE_KEY = "osha_dashboard_outcomes_v1";
@@ -709,6 +709,31 @@ function OutreachCard({
 
 const MemoOutreachCard = React.memo(OutreachCard);
 
+type PaginationControlsProps = {
+  page: number;
+  totalItems: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+};
+
+function PaginationControls({ page, totalItems, pageSize, onPageChange }: PaginationControlsProps) {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+  const start = page * pageSize + 1;
+  const end = Math.min((page + 1) * pageSize, totalItems);
+  return (
+    <Stack direction="row" alignItems="center" justifyContent="center" spacing={1} sx={{ pt: 0.5 }}>
+      <Button size="small" variant="outlined" disabled={page === 0} onClick={() => onPageChange(0)}>«</Button>
+      <Button size="small" variant="outlined" disabled={page === 0} onClick={() => onPageChange(page - 1)}>‹ Prev</Button>
+      <Typography variant="body2" color="text.secondary" sx={{ px: 1 }}>
+        {start}–{end} of {totalItems}
+      </Typography>
+      <Button size="small" variant="outlined" disabled={page >= totalPages - 1} onClick={() => onPageChange(page + 1)}>Next ›</Button>
+      <Button size="small" variant="outlined" disabled={page >= totalPages - 1} onClick={() => onPageChange(totalPages - 1)}>»</Button>
+    </Stack>
+  );
+}
+
 function formatPullTime(isoTime?: string | null) {
   if (!isoTime) return "N/A";
   const date = new Date(isoTime);
@@ -746,6 +771,7 @@ export default function App() {
   const [incidentFilter, setIncidentFilter] = React.useState("All");
   const [leadTypeFilter, setLeadTypeFilter] = React.useState("All");
   const [geoMatchFilter, setGeoMatchFilter] = React.useState("All");
+  const [industryFilter, setIndustryFilter] = React.useState("All");
   const [settings, setSettings] = React.useState(initialSettings);
   const [liveLeads, setLiveLeads] = React.useState<LeadRecord[]>([]);
   const [totalAvailableLeads, setTotalAvailableLeads] = React.useState<number | null>(null);
@@ -756,10 +782,11 @@ export default function App() {
   const [triggeringPull, setTriggeringPull] = React.useState(false);
   const [triggeringFullPull, setTriggeringFullPull] = React.useState(false);
   const [reloadingBigQuery, setReloadingBigQuery] = React.useState(false);
-  const [renderLimitByView, setRenderLimitByView] = React.useState({
-    "lead-queue": INITIAL_RENDER_LIMIT,
-    "hot-eye-leads": INITIAL_RENDER_LIMIT,
-    "ppe-opportunity": INITIAL_RENDER_LIMIT,
+  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
+  const [pageByView, setPageByView] = React.useState<Record<string, number>>({
+    "lead-queue": 0,
+    "hot-eye-leads": 0,
+    "ppe-opportunity": 0,
   });
 
   // Bad lead state — persisted to localStorage, filtered out of all views
@@ -1014,6 +1041,11 @@ export default function App() {
     [leadData],
   );
 
+  const industryOptions = React.useMemo(
+    () => Array.from(new Set(leadData.map((lead) => lead.industry).filter(Boolean))).sort(),
+    [leadData],
+  );
+
   const countyOptions = React.useMemo(
     () =>
       Array.from(
@@ -1062,6 +1094,7 @@ export default function App() {
         if (incidentFilter !== "All" && lead.incidentType !== incidentFilter) return false;
         if (leadTypeFilter !== "All" && (lead.leadType || "profile_fit") !== leadTypeFilter) return false;
         if (geoMatchFilter !== "All" && (lead.geoMatchSource || "none") !== geoMatchFilter) return false;
+        if (industryFilter !== "All" && lead.industry !== industryFilter) return false;
         if (settings.showOnlyContactReady && !CONTACT_READY_ACTIONS.includes(lead.action)) {
           return false;
         }
@@ -1077,6 +1110,7 @@ export default function App() {
       incidentFilter,
       leadTypeFilter,
       geoMatchFilter,
+      industryFilter,
       settings.showOnlyContactReady,
     ],
   );
@@ -1095,6 +1129,7 @@ export default function App() {
       incidentFilter !== "All" ||
       leadTypeFilter !== "All" ||
       geoMatchFilter !== "All" ||
+      industryFilter !== "All" ||
       query.trim().length > 0 ||
       settings.showOnlyContactReady,
     [
@@ -1105,6 +1140,7 @@ export default function App() {
       incidentFilter,
       leadTypeFilter,
       geoMatchFilter,
+      industryFilter,
       query,
       settings.showOnlyContactReady,
     ],
@@ -1118,6 +1154,7 @@ export default function App() {
     setIncidentFilter("All");
     setLeadTypeFilter("All");
     setGeoMatchFilter("All");
+    setIndustryFilter("All");
     setQuery("");
     setSettings((current) => ({ ...current, showOnlyContactReady: false }));
   };
@@ -1186,33 +1223,29 @@ export default function App() {
     [visibleLeads],
   );
 
+  // Reset to page 0 when filters or page size change
   React.useEffect(() => {
-    setRenderLimitByView((current) => ({
-      ...current,
-      "lead-queue": Math.min(current["lead-queue"], Math.max(INITIAL_RENDER_LIMIT, leadQueueLeads.length)),
-      "hot-eye-leads": Math.min(current["hot-eye-leads"], Math.max(INITIAL_RENDER_LIMIT, hotEyeLeads.length)),
-      "ppe-opportunity": Math.min(current["ppe-opportunity"], Math.max(INITIAL_RENDER_LIMIT, ppeOpportunityLeads.length)),
-    }));
-  }, [leadQueueLeads.length, hotEyeLeads.length, ppeOpportunityLeads.length]);
+    setPageByView({ "lead-queue": 0, "hot-eye-leads": 0, "ppe-opportunity": 0 });
+  }, [visibleLeads.length, pageSize]);
 
-  const leadQueueVisibleRows = React.useMemo(
-    () => leadQueueLeads.slice(0, renderLimitByView["lead-queue"]),
-    [leadQueueLeads, renderLimitByView],
-  );
-  const hotEyeVisibleRows = React.useMemo(
-    () => hotEyeLeads.slice(0, renderLimitByView["hot-eye-leads"]),
-    [hotEyeLeads, renderLimitByView],
-  );
-  const ppeVisibleRows = React.useMemo(
-    () => ppeOpportunityLeads.slice(0, renderLimitByView["ppe-opportunity"]),
-    [ppeOpportunityLeads, renderLimitByView],
-  );
+  const leadQueueVisibleRows = React.useMemo(() => {
+    const p = pageByView["lead-queue"] ?? 0;
+    return leadQueueLeads.slice(p * pageSize, (p + 1) * pageSize);
+  }, [leadQueueLeads, pageByView, pageSize]);
 
-  const loadMoreForView = (view: "lead-queue" | "hot-eye-leads" | "ppe-opportunity") => {
-    setRenderLimitByView((current) => ({
-      ...current,
-      [view]: current[view] + RENDER_STEP,
-    }));
+  const hotEyeVisibleRows = React.useMemo(() => {
+    const p = pageByView["hot-eye-leads"] ?? 0;
+    return hotEyeLeads.slice(p * pageSize, (p + 1) * pageSize);
+  }, [hotEyeLeads, pageByView, pageSize]);
+
+  const ppeVisibleRows = React.useMemo(() => {
+    const p = pageByView["ppe-opportunity"] ?? 0;
+    return ppeOpportunityLeads.slice(p * pageSize, (p + 1) * pageSize);
+  }, [ppeOpportunityLeads, pageByView, pageSize]);
+
+  const goToPage = (view: "lead-queue" | "hot-eye-leads" | "ppe-opportunity", page: number) => {
+    setPageByView((current) => ({ ...current, [view]: page }));
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const navCounts: Record<NavView, number | string> = {
@@ -1627,6 +1660,35 @@ export default function App() {
                     </Select>
                   </FormControl>
                 </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Industry</InputLabel>
+                    <Select
+                      label="Industry"
+                      value={industryFilter}
+                      onChange={(event) => setIndustryFilter(event.target.value)}
+                    >
+                      <MenuItem value="All">All industries</MenuItem>
+                      {industryOptions.map((ind) => (
+                        <MenuItem key={ind} value={ind}>{ind}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Per page</InputLabel>
+                    <Select
+                      label="Per page"
+                      value={pageSize}
+                      onChange={(event) => setPageSize(Number(event.target.value))}
+                    >
+                      {PAGE_SIZE_OPTIONS.map((n) => (
+                        <MenuItem key={n} value={n}>{n} per page</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
               </Grid>
             </CardContent>
           </Card>
@@ -1765,13 +1827,14 @@ export default function App() {
                   </Stack>
                 </Grid>
               ))}
-              {leadQueueLeads.length > leadQueueVisibleRows.length ? (
+              {leadQueueLeads.length > pageSize ? (
                 <Grid size={{ xs: 12 }}>
-                  <Stack direction="row" justifyContent="center" spacing={1}>
-                    <Button variant="outlined" onClick={() => loadMoreForView("lead-queue")}>
-                      Load More ({leadQueueVisibleRows.length} of {leadQueueLeads.length})
-                    </Button>
-                  </Stack>
+                  <PaginationControls
+                    page={pageByView["lead-queue"] ?? 0}
+                    totalItems={leadQueueLeads.length}
+                    pageSize={pageSize}
+                    onPageChange={(p) => goToPage("lead-queue", p)}
+                  />
                 </Grid>
               ) : null}
               {leadQueueLeads.length === 0 ? (
@@ -1802,13 +1865,14 @@ export default function App() {
                   </Stack>
                 </Grid>
               ))}
-              {hotEyeLeads.length > hotEyeVisibleRows.length ? (
+              {hotEyeLeads.length > pageSize ? (
                 <Grid size={{ xs: 12 }}>
-                  <Stack direction="row" justifyContent="center" spacing={1}>
-                    <Button variant="outlined" onClick={() => loadMoreForView("hot-eye-leads")}>
-                      Load More ({hotEyeVisibleRows.length} of {hotEyeLeads.length})
-                    </Button>
-                  </Stack>
+                  <PaginationControls
+                    page={pageByView["hot-eye-leads"] ?? 0}
+                    totalItems={hotEyeLeads.length}
+                    pageSize={pageSize}
+                    onPageChange={(p) => goToPage("hot-eye-leads", p)}
+                  />
                 </Grid>
               ) : null}
               {hotEyeLeads.length === 0 ? (
@@ -1839,13 +1903,14 @@ export default function App() {
                   </Stack>
                 </Grid>
               ))}
-              {ppeOpportunityLeads.length > ppeVisibleRows.length ? (
+              {ppeOpportunityLeads.length > pageSize ? (
                 <Grid size={{ xs: 12 }}>
-                  <Stack direction="row" justifyContent="center" spacing={1}>
-                    <Button variant="outlined" onClick={() => loadMoreForView("ppe-opportunity")}>
-                      Load More ({ppeVisibleRows.length} of {ppeOpportunityLeads.length})
-                    </Button>
-                  </Stack>
+                  <PaginationControls
+                    page={pageByView["ppe-opportunity"] ?? 0}
+                    totalItems={ppeOpportunityLeads.length}
+                    pageSize={pageSize}
+                    onPageChange={(p) => goToPage("ppe-opportunity", p)}
+                  />
                 </Grid>
               ) : null}
               {ppeOpportunityLeads.length === 0 ? (
