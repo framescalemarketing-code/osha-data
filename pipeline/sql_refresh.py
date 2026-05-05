@@ -34,6 +34,8 @@ def run_sql_refresh(
         .replace("{{NIH_DATASET}}", config.nih_dataset)
         .replace("{{CA_SOS_PROJECT_ID}}", config.ca_sos_project_id)
         .replace("{{CA_SOS_DATASET}}", config.ca_sos_dataset)
+        .replace("{{CITY_PROJECT_ID}}", config.city_signals_project_id)
+        .replace("{{CITY_DATASET}}", config.city_signals_dataset)
     )
     bq_query_sql(
         repo_root=config.paths.repo_root,

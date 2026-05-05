@@ -8,15 +8,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dashboardRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(dashboardRoot, "..");
+const bqCommand = "bq";
 const runtimeDir = path.resolve(dashboardRoot, ".runtime");
 const historyFile = path.resolve(runtimeDir, "pull-history.json");
 const outcomesFile = path.resolve(runtimeDir, "lead-outcomes.json");
+const leadsSnapshotFile = path.resolve(runtimeDir, "leads-cache.json");
 const port = Number(process.env.DASHBOARD_API_PORT || 8787);
+const LEADS_CACHE_TTL_MS = 45_000;
 
 const app = express();
 app.use(express.json());
 
 let currentPull = null;
+let runtimeEnvCache = null;
+let leadsCache = {
+  leads: [],
+  generatedAt: null,
+  totalAvailable: null,
+  cacheUntil: 0,
+};
 
 function parseDotEnv(rawText) {
   const map = new Map();
@@ -34,14 +44,141 @@ function parseDotEnv(rawText) {
 }
 
 async function loadPipelineConfig() {
-  const dotenvPath = path.resolve(repoRoot, ".env.local");
-  const text = await fs.readFile(dotenvPath, "utf8");
-  const env = parseDotEnv(text);
+  const env = await loadRuntimeEnvMap();
 
   return {
     projectId: env.get("PROJECT_ID") || "cold-lead-pipeline-dashboard",
     dataset: env.get("BQ_DATASET") || "osha_raw",
   };
+}
+
+async function loadRuntimeEnvMap() {
+  const localPath = path.resolve(repoRoot, ".env.local");
+  const fallbackPath = path.resolve(repoRoot, ".env");
+  const dotenvPath = localPath;
+  try {
+    const text = await fs.readFile(dotenvPath, "utf8");
+    return parseDotEnv(text);
+  } catch (_error) {
+    try {
+      const fallbackText = await fs.readFile(fallbackPath, "utf8");
+      return parseDotEnv(fallbackText);
+    } catch (_fallbackError) {
+      return new Map();
+    }
+  }
+}
+
+function toRuntimeEnv(dotenvMap) {
+  const env = { ...process.env };
+  for (const [key, value] of dotenvMap.entries()) {
+    if (!env[key] || String(env[key]).trim() === "") {
+      env[key] = value;
+    }
+  }
+  return env;
+}
+
+function isInlineJson(value) {
+  const trimmed = String(value || "").trim();
+  return trimmed.startsWith("{") && trimmed.endsWith("}");
+}
+
+function maybeDecodeBase64Json(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const decoded = Buffer.from(trimmed, "base64").toString("utf8").trim();
+    if (decoded.startsWith("{") && decoded.endsWith("}")) {
+      return decoded;
+    }
+    return null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function resolveServiceAccountPath(runtimeEnv) {
+  await ensureRuntimeDir();
+
+  const pathCandidates = [
+    runtimeEnv.GOOGLE_APPLICATION_CREDENTIALS,
+    runtimeEnv.BIGQUERY_SERVICE_ACCOUNT_KEY_PATH,
+    runtimeEnv.BIGQUERY_SERVICE_ACCOUNT_KEY_FILE,
+  ];
+  const legacyValue = runtimeEnv.BigQuery_Service_Account_Key;
+  if (legacyValue && !isInlineJson(legacyValue) && !maybeDecodeBase64Json(legacyValue)) {
+    pathCandidates.push(legacyValue);
+  }
+
+  for (const candidate of pathCandidates) {
+    if (!candidate || String(candidate).trim() === "") {
+      continue;
+    }
+    const resolved = path.isAbsolute(candidate)
+      ? candidate
+      : path.resolve(repoRoot, String(candidate));
+    try {
+      await fs.access(resolved);
+      return resolved;
+    } catch (_error) {
+      // Continue to inline fallback candidates.
+    }
+  }
+
+  const inlineCandidates = [
+    runtimeEnv.BIGQUERY_SERVICE_ACCOUNT_KEY_JSON,
+    runtimeEnv.GOOGLE_SERVICE_ACCOUNT_JSON,
+    runtimeEnv.GCP_SERVICE_ACCOUNT_JSON,
+    runtimeEnv.BigQuery_Service_Account_Key,
+  ];
+
+  for (const candidate of inlineCandidates) {
+    if (!candidate || String(candidate).trim() === "") {
+      continue;
+    }
+
+    const maybeJson = isInlineJson(candidate)
+      ? String(candidate).trim()
+      : maybeDecodeBase64Json(candidate);
+    if (!maybeJson) {
+      continue;
+    }
+
+    const keyPath = path.resolve(runtimeDir, "gcp-service-account.json");
+    await fs.writeFile(keyPath, maybeJson, "utf8");
+    return keyPath;
+  }
+
+  return null;
+}
+
+async function getRuntimeEnv() {
+  if (runtimeEnvCache) {
+    return runtimeEnvCache;
+  }
+
+  const dotenvMap = await loadRuntimeEnvMap();
+  const runtimeEnv = toRuntimeEnv(dotenvMap);
+  const serviceAccountPath = await resolveServiceAccountPath(runtimeEnv);
+  if (serviceAccountPath && (!runtimeEnv.GOOGLE_APPLICATION_CREDENTIALS || runtimeEnv.GOOGLE_APPLICATION_CREDENTIALS.trim() === "")) {
+    runtimeEnv.GOOGLE_APPLICATION_CREDENTIALS = serviceAccountPath;
+  }
+
+  runtimeEnvCache = runtimeEnv;
+  return runtimeEnv;
+}
+
+async function resolvePythonCommand() {
+  const venvPython = path.resolve(repoRoot, ".venv", "Scripts", "python.exe");
+  try {
+    await fs.access(venvPython);
+    return venvPython;
+  } catch (_error) {
+    return "python";
+  }
 }
 
 async function ensureRuntimeDir() {
@@ -80,6 +217,33 @@ async function writeOutcomes(outcomes) {
   await fs.writeFile(outcomesFile, JSON.stringify(outcomes, null, 2), "utf8");
 }
 
+async function readLeadsSnapshot() {
+  await ensureRuntimeDir();
+  try {
+    const payload = await fs.readFile(leadsSnapshotFile, "utf8");
+    const parsed = JSON.parse(payload);
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leads)) {
+      return null;
+    }
+    return {
+      leads: parsed.leads,
+      generatedAt: typeof parsed.generatedAt === "string" ? parsed.generatedAt : new Date().toISOString(),
+      totalAvailable: Number.isFinite(Number(parsed.totalAvailable)) ? Number(parsed.totalAvailable) : null,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function writeLeadsSnapshot(leads, generatedAt, totalAvailable = null) {
+  await ensureRuntimeDir();
+  await fs.writeFile(
+    leadsSnapshotFile,
+    JSON.stringify({ leads, generatedAt, totalAvailable }, null, 2),
+    "utf8",
+  );
+}
+
 function normalizeCodes(rawStandards) {
   if (!rawStandards) {
     return [];
@@ -106,86 +270,214 @@ function normalizeCodes(rawStandards) {
 }
 
 function inferIncidentType(row) {
-  const severe = String(row["Severe Incident Signal"] || "").toLowerCase() === "yes";
-  const hasComplaint = String(row["Has Complaint Signal"] || "").toLowerCase() === "yes";
-  const directPrescription = Number(row["Direct Prescription Citation Count"] || 0) > 0;
-  const prescriptionSignal = Number(row["Prescription Signal Count"] || 0) > 0;
-  const fitGap = Number(row["Fit Selection Citation Count"] || 0) > 0;
-  const eyeFace = Number(row["Eye Face Citation Count"] || 0) > 0;
-  const generalPpe = Number(row["General PPE Citation Count"] || 0) > 0;
+  // v3 schema: derive from new score/count fields
+  const eyeInjury = Number(row["eye_injury_count"] || 0) > 0;
+  const prescription = Number(row["prescription_violation_count"] || 0) > 0;
+  const eyeViolation = Number(row["eye_violation_count"] || 0) > 0;
+  const openViolation = Number(row["open_eye_violation_count"] || 0) > 0;
+  const generalPpe = Number(row["general_ppe_violation_count"] || 0) > 0;
 
-  if (severe) return "Severe Injury";
-  if (hasComplaint) return "Complaint Inspection";
-  if (directPrescription || prescriptionSignal) return "Prescription Safety";
-  if (fitGap) return "Fit And Training Gap";
-  if (eyeFace && generalPpe) return "Chemical Exposure";
-  if (eyeFace) return "Impact Hazard";
+  if (eyeInjury) return "Severe Injury";
+  if (prescription) return "Prescription Safety";
+  if (openViolation) return "Impact Hazard";
+  if (eyeViolation) return "Impact Hazard";
+  if (generalPpe) return "General PPE";
   return "General PPE";
 }
 
+function resolveIncidentDate(row) {
+  // v3 schema uses snake_case column names
+  if (row["last_eye_injury_date"]) {
+    return { value: row["last_eye_injury_date"], source: "accident" };
+  }
+  if (row["last_violation_event_date"]) {
+    return { value: row["last_violation_event_date"], source: "violation-event" };
+  }
+  if (row["last_violation_date"]) {
+    return { value: row["last_violation_date"], source: "violation-event" };
+  }
+  if (row["close_case_date"]) {
+    return { value: row["close_case_date"], source: "case-close" };
+  }
+  if (row["open_case_date"]) {
+    return { value: row["open_case_date"], source: "case-open" };
+  }
+  return { value: null, source: "unknown" };
+}
+
 function toLeadRecord(row) {
-  const matchedSourcesRaw = String(row["Matched Sources"] || "").trim();
-  const matchedSources = matchedSourcesRaw
-    ? matchedSourcesRaw.split("|").map((item) => item.trim()).filter(Boolean)
-    : ["OSHA"];
-
-  const incidentDate =
-    row["Last Accident Date"] ||
-    row["Last Violation Event Date"] ||
-    row["Latest Case Close Date"] ||
-    row["Case Open Date"] ||
-    null;
-
-  const incidentDateIso = incidentDate ? String(incidentDate).slice(0, 10) : "";
+  const incidentDateInfo = resolveIncidentDate(row);
+  const incidentDateIso = incidentDateInfo.value
+    ? String(incidentDateInfo.value).slice(0, 10)
+    : "";
   const now = Date.now();
   const lastTouchedDays = incidentDateIso
     ? Math.max(0, Math.floor((now - new Date(`${incidentDateIso}T00:00:00Z`).getTime()) / 86400000))
     : 0;
 
+  const tier = row["lead_tier"] || "P3 Industry Fit";
+  const finalScore = Number(row["final_score"] || 0);
+  const isCityLicenseLead = !row["inspection_id"];
+
+  // Map lead tier to legacy priority / action labels
+  const priorityMap = {
+    "P0 Hot Eye":       "P0 Ideal",
+    "P1 Eye Violation": "P1 Active",
+    "P2 PPE Opportunity": "P2 Research",
+    "P3 Industry Fit":  "P3 Monitor",
+  };
+  const actionMap = {
+    "P0 Hot Eye":       "Ideal Call Now",
+    "P1 Eye Violation": "Call Now",
+    "P2 PPE Opportunity": finalScore >= 30 ? "Call This Week" : "Research Then Call",
+    "P3 Industry Fit":  "Monitor / Nurture",
+  };
+
+  const eyeInjuryDescriptions = String(row["eye_injury_descriptions"] || "")
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const emphasisCodes = String(row["emphasis_code_list"] || "")
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   return {
-    id: `lead-${row["Latest Inspection ID"] || row["Account Name"] || Math.random().toString(16).slice(2)}`,
-    company: row["Account Name"] || "Unknown Company",
-    region: row["Region"] || "San Diego",
-    city: row["Site City"] || "",
-    industry: row["Industry Segment"] || "",
-    ownerType: row["Ownership Type"] || "",
-    overallSalesScore: Number(row["Overall Sales Score"] || 0),
-    eyewearEvidenceScore: Number(row["Eyewear Evidence Score"] || row["OSHA Follow-up Score"] || 0),
-    priority: row["Overall Sales Priority"] || "P3 Monitor",
-    needTier: row["Eyewear Need Tier"] || "Fit Only",
-    action: row["Should Look At Now"] || "Monitor / Nurture",
-    matchedSources,
-    reasonToContact: row["Reason To Contact"] || "",
-    whyNow: row["Why Now"] || "",
-    recentInspectionContext: row["Recent Inspection Context"] || "",
+    id: `lead-${row["inspection_id"] || row["account_name"] || Math.random().toString(16).slice(2)}`,
+    company: row["account_name"] || "Unknown Company",
+    region: row["region"] || "Southern California",
+    county: row["county"] || "",
+    distanceFromMiramarMiles:
+      row["distance_from_miramar_miles"] === null || row["distance_from_miramar_miles"] === undefined
+        ? null
+        : Number(row["distance_from_miramar_miles"]),
+    city: row["site_city"] || "",
+    industry: row["industry_segment"] || "",
+    ownerType: row["ownership_type"] || "",
+
+    // v3 scores
+    eyeLeadScore: Number(row["eye_lead_score"] || 0),
+    ppeScore: Number(row["ppe_score"] || 0),
+    finalScore,
+    leadTier: tier,
+
+    // legacy compat fields for components that still reference them
+    overallSalesScore: finalScore,
+    eyewearEvidenceScore: Number(row["eye_lead_score"] || 0),
+    priority: priorityMap[tier] || "P3 Monitor",
+    action: actionMap[tier] || "Monitor / Nurture",
+
+    // v3 eye injury evidence
+    eyeInjuryCount: Number(row["eye_injury_count"] || 0),
+    fatalityCount: Number(row["fatality_count"] || 0),
+    faceHeadInjuryCount: Number(row["face_head_injury_count"] || 0),
+    eyeInjuryDescriptions,
+
+    // v3 violation evidence
+    eyeViolationCount: Number(row["eye_violation_count"] || 0),
+    prescriptionViolationCount: Number(row["prescription_violation_count"] || 0),
+    openEyeViolationCount: Number(row["open_eye_violation_count"] || 0),
+    generalPpeViolationCount: Number(row["general_ppe_violation_count"] || 0),
+    openGeneralPpeViolationCount: Number(row["open_general_ppe_violation_count"] || 0),
+    willfulViolationCount: Number(row["willful_violation_count"] || 0),
+    repeatViolationCount: Number(row["repeat_violation_count"] || 0),
+    totalCurrentPenalty: Number(row["total_current_penalty"] || 0),
+
+    // v3 enrichment signals
+    violationEventCount: Number(row["violation_event_count"] || 0),
+    contestedViolationCount: Number(row["contested_violation_count"] || 0),
+    eyeEmphasisCount: Number(row["eye_emphasis_count"] || 0),
+    emphasisCodes,
+    relatedInspectionCount: Number(row["related_inspection_count"] || 0),
+    formalFollowupCount: Number(row["formal_followup_count"] || 0),
+    totalInspectionCount: Number(row["total_inspection_count"] || 0),
+
+    rawViolationCodes: normalizeCodes(row["standards_cited"]),
+    openViolations: row["has_open_violations"] === true || String(row["has_open_violations"] || "").toLowerCase() === "true",
+
+    pitchRecommendation: row["pitch_recommendation"] || "",
+    employeeBand: row["employee_band"] || "Unknown",
+
+    // date / incident
     incidentDate: incidentDateIso,
+    incidentDateSource: incidentDateInfo.source,
     incidentType: inferIncidentType(row),
-    rawViolationCodes: normalizeCodes(row["Standards Cited"]),
-    openViolations: String(row["Has Open Violations"] || "").toLowerCase() === "yes",
-    severeIncident: String(row["Severe Incident Signal"] || "").toLowerCase() === "yes",
-    employeeBand: row["Estimated Employee Band"] || "Unknown",
     lastTouchedDays,
     accountStatus: "New",
+
+    // v3 direct date fields
+    openCaseDate: row["open_case_date"] ? String(row["open_case_date"]).slice(0, 10) : "",
+    closeCaseDate: row["close_case_date"] ? String(row["close_case_date"]).slice(0, 10) : "",
+    lastEyeInjuryDate: row["last_eye_injury_date"] ? String(row["last_eye_injury_date"]).slice(0, 10) : "",
+
+    // legacy compat
+    needTier: tier === "P0 Hot Eye" || tier === "P1 Eye Violation" ? "Direct Need"
+      : tier === "P2 PPE Opportunity" ? "Probable Need" : "Fit Only",
+    matchedSources: isCityLicenseLead ? ["City License"] : ["OSHA"],
+    reasonToContact: row["pitch_recommendation"] || "",
+    whyNow: "",
+    recentInspectionContext: "",
+    severeIncident: Number(row["eye_injury_count"] || 0) > 0,
   };
 }
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const child = spawn(command, args, {
       cwd: options.cwd || repoRoot,
       env: { ...process.env, ...(options.env || {}) },
-      shell: process.platform === "win32",
-      stdio: ["ignore", "pipe", "pipe"],
+      shell: options.shell === true,
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
     const stdout = [];
     const stderr = [];
+    let timeoutHandle = null;
+
+    const finishWithError = (message) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      reject(new Error(message));
+    };
+
+    if (typeof options.timeoutMs === "number" && options.timeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        const out = stdout.join("").trim();
+        const err = stderr.join("").trim();
+        const tail = `${out}\n${err}`.trim().split(/\r?\n/).slice(-20).join("\n");
+        child.kill("SIGTERM");
+        finishWithError(
+          `Command timed out after ${options.timeoutMs}ms: ${command} ${args.join(" ")}\n${tail}`,
+        );
+      }, options.timeoutMs);
+    }
 
     child.stdout.on("data", (chunk) => stdout.push(String(chunk)));
     child.stderr.on("data", (chunk) => stderr.push(String(chunk)));
 
-    child.on("error", reject);
+    if (typeof options.input === "string") {
+      child.stdin.write(options.input);
+    }
+    child.stdin.end();
+
+    child.on("error", (error) => {
+      finishWithError(error instanceof Error ? error.message : String(error));
+    });
     child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
       const out = stdout.join("");
       const err = stderr.join("");
       if (code !== 0) {
@@ -197,18 +489,243 @@ function runCommand(command, args, options = {}) {
   });
 }
 
+async function ensureBigQueryAuth() {
+  const cfg = await loadPipelineConfig();
+  const runtimeEnv = await getRuntimeEnv();
+  try {
+    await runCommand(
+      bqCommand,
+      [
+        `--project_id=${cfg.projectId}`,
+        "query",
+        "--nouse_legacy_sql",
+        "--max_rows=1",
+        "SELECT 1",
+      ],
+      { env: runtimeEnv, shell: true },
+    );
+    console.log("[dashboard-api] BigQuery auth check passed.");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn("[dashboard-api] BigQuery auth preflight failed:", detail);
+  }
+}
+
 async function fetchLiveLeads() {
   const cfg = await loadPipelineConfig();
-  const sql = `
-WITH actionable AS (
+  const fastSql = `
+WITH base AS (
+SELECT
+  inspection_id,
+  account_name,
+  region,
+  county,
+  site_city,
+  site_state,
+  site_zip,
+  distance_from_miramar_miles,
+  naics_code,
+  industry_segment,
+  ownership_type,
+  employee_band,
+  nr_employees,
+  open_case_date,
+  close_case_date,
+  last_eye_injury_date,
+  last_violation_date,
+  last_violation_event_date,
+  eye_lead_score,
+  ppe_score,
+  final_score,
+  lead_tier,
+  pitch_recommendation,
+  eye_injury_count,
+  fatality_count,
+  face_head_injury_count,
+  eye_injury_descriptions,
+  eye_violation_count,
+  prescription_violation_count,
+  side_protection_violation_count,
+  open_eye_violation_count,
+  general_ppe_violation_count,
+  open_general_ppe_violation_count,
+  willful_violation_count,
+  repeat_violation_count,
+  total_current_penalty,
+  standards_cited,
+  violation_event_count,
+  contested_violation_count,
+  eye_emphasis_count,
+  emphasis_code_list,
+  related_inspection_count,
+  formal_followup_count,
+  total_inspection_count,
+  has_open_violations
+FROM \`${cfg.projectId}.${cfg.dataset}.dashboard_leads_current\`
+),
+osha_pool AS (
   SELECT *
+  FROM base
+  WHERE inspection_id IS NOT NULL
+    AND lead_tier IN ('P0 Hot Eye', 'P1 Eye Violation', 'P2 PPE Opportunity')
+    AND (
+      lead_tier IN ('P0 Hot Eye', 'P1 Eye Violation')
+      OR (
+        lead_tier = 'P2 PPE Opportunity'
+        AND (
+          COALESCE(eye_injury_count, 0) > 0
+          OR COALESCE(eye_violation_count, 0) > 0
+          OR COALESCE(prescription_violation_count, 0) > 0
+          OR COALESCE(open_eye_violation_count, 0) > 0
+          OR COALESCE(general_ppe_violation_count, 0) > 0
+          OR COALESCE(open_general_ppe_violation_count, 0) > 0
+        )
+      )
+    )
+  ORDER BY
+    CASE lead_tier
+      WHEN 'P0 Hot Eye' THEN 0
+      WHEN 'P1 Eye Violation' THEN 1
+      WHEN 'P2 PPE Opportunity' THEN 2
+      ELSE 3
+    END,
+    final_score DESC,
+    IF(has_open_violations, 1, 0) DESC
+  LIMIT 320
+),
+city_pool AS (
+  SELECT *
+  FROM base
+  WHERE inspection_id IS NULL
+    AND UPPER(COALESCE(site_state, '')) = 'CA'
+    AND REGEXP_CONTAINS(COALESCE(site_zip, ''), r'^9\\d{4}$')
+    AND UPPER(TRIM(COALESCE(account_name, ''))) NOT IN ('', 'NA', 'N/A', 'UNKNOWN', 'NONE', 'NULL')
+    AND lead_tier IN ('P1 Eye Violation', 'P2 PPE Opportunity')
+    AND final_score >= 34
+    AND REGEXP_CONTAINS(COALESCE(naics_code, ''), r'^\\d{6}$')
+    AND industry_segment IN (
+      'Construction',
+      'Manufacturing',
+      'Chemical Manufacturing',
+      'Machinery Manufacturing',
+      'Food/Beverage Manufacturing',
+      'Warehousing/Transport',
+      'Computer/Electronics Manufacturing'
+    )
+    AND (
+      (industry_segment = 'Construction' AND REGEXP_CONTAINS(naics_code, r'^23'))
+      OR (industry_segment = 'Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^(31|32|33)'))
+      OR (industry_segment = 'Chemical Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^325'))
+      OR (industry_segment = 'Machinery Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^333'))
+      OR (industry_segment = 'Food/Beverage Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^(311|312)'))
+      OR (industry_segment = 'Warehousing/Transport' AND REGEXP_CONTAINS(naics_code, r'^(48|49)'))
+      OR (industry_segment = 'Computer/Electronics Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^334'))
+    )
+  ORDER BY final_score DESC, IF(has_open_violations, 1, 0) DESC
+  LIMIT 280
+),
+combined AS (
+  SELECT * FROM osha_pool
+  UNION ALL
+  SELECT * FROM city_pool
+),
+deduped AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      c.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY UPPER(COALESCE(c.account_name, '')), COALESCE(c.site_zip, ''), IF(c.inspection_id IS NULL, 'city', c.inspection_id)
+        ORDER BY c.final_score DESC
+      ) AS rn
+    FROM combined c
+  )
+  WHERE rn = 1
+)
+SELECT *
+FROM deduped
+ORDER BY
+  CASE lead_tier
+    WHEN 'P0 Hot Eye' THEN 0
+    WHEN 'P1 Eye Violation' THEN 1
+    WHEN 'P2 PPE Opportunity' THEN 2
+    ELSE 3
+  END ASC,
+  IF(inspection_id IS NULL, 1, 0) ASC,
+  final_score DESC,
+  IF(has_open_violations, 1, 0) DESC
+LIMIT 500
+`;
+
+  const legacySql = `
+WITH actionable AS (
+  SELECT
+    \`Latest Inspection ID\`,
+    \`Account Name\`,
+    \`Region\`,
+    \`Site City\`,
+    \`Industry Segment\`,
+    \`Ownership Type\`,
+    \`Overall Sales Score\`,
+    \`Eyewear Evidence Score\`,
+    \`Overall Sales Priority\`,
+    \`Eyewear Need Tier\`,
+    \`Should Look At Now\`,
+    \`Matched Sources\`,
+    \`Reason To Contact\`,
+    \`Why Now\`,
+    \`Recent Inspection Context\`,
+    \`Has Open Violations\`,
+    \`Severe Incident Signal\`,
+    \`Direct Prescription Citation Count\`,
+    \`Prescription Signal Count\`,
+    \`Fit Selection Citation Count\`,
+    \`Eye Face Citation Count\`,
+    \`General PPE Citation Count\`,
+    \`Estimated Employee Band\`
   FROM \`${cfg.projectId}.${cfg.dataset}.eyewear_opportunity_actionable_current\`
 ),
 followup AS (
-  SELECT *
+  SELECT
+    \`Latest Inspection ID\`,
+    \`Account Name\`,
+    \`Region\`,
+    \`Case Open Date\`,
+    \`Latest Case Close Date\`,
+    \`Last Violation Event Date\`,
+    \`Last Accident Date\`,
+    \`Has Complaint Signal\`,
+    \`Standards Cited\`,
+    \`Company Latest Load Timestamp\`
   FROM \`${cfg.projectId}.${cfg.dataset}.sales_followup_all_current\`
 ),
-joined AS (
+keyed_actionable AS (
+  SELECT DISTINCT
+    \`Latest Inspection ID\`,
+    \`Account Name\`,
+    \`Region\`
+  FROM actionable
+),
+followup_latest AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      f.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY f.\`Latest Inspection ID\`, f.\`Region\`, f.\`Account Name\`
+        ORDER BY f.\`Company Latest Load Timestamp\` DESC NULLS LAST
+      ) AS rn
+    FROM followup f
+    INNER JOIN keyed_actionable ka
+      ON ka.\`Latest Inspection ID\` = f.\`Latest Inspection ID\`
+     AND ka.\`Region\` = f.\`Region\`
+     AND ka.\`Account Name\` = f.\`Account Name\`
+  )
+  WHERE rn = 1
+)
+SELECT
+  *
+FROM (
   SELECT
     a.*,
     f.\`Case Open Date\`,
@@ -219,37 +736,103 @@ joined AS (
     f.\`Standards Cited\`,
     f.\`Company Latest Load Timestamp\`
   FROM actionable a
-  LEFT JOIN followup f
+  LEFT JOIN followup_latest f
     ON a.\`Latest Inspection ID\` = f.\`Latest Inspection ID\`
    AND a.\`Region\` = f.\`Region\`
    AND a.\`Account Name\` = f.\`Account Name\`
 )
-SELECT * EXCEPT(rn)
-FROM (
-  SELECT
-    joined.*,
-    ROW_NUMBER() OVER (
-      PARTITION BY \`Latest Inspection ID\`, \`Region\`, \`Account Name\`
-      ORDER BY \`Company Latest Load Timestamp\` DESC NULLS LAST
-    ) AS rn
-  FROM joined
-)
-WHERE rn = 1
 ORDER BY \`Overall Sales Score\` DESC
 LIMIT 500
 `;
-  const sqlOneLine = sql.replace(/\s+/g, " ").trim();
+  const runtimeEnv = await getRuntimeEnv();
 
-  const rawJson = await runCommand("bq", [
+  const executeSql = async (sqlText) => {
+    return runCommand(bqCommand, [
+      `--project_id=${cfg.projectId}`,
+      "query",
+      "--use_legacy_sql=false",
+      "--format=prettyjson",
+      "--max_rows=500",
+    ], { env: runtimeEnv, timeoutMs: 180000, shell: true, input: sqlText });
+  };
+
+  const rawJson = await executeSql(fastSql);
+  const rows = JSON.parse(rawJson);
+  return rows.map(toLeadRecord);
+}
+
+async function fetchLiveLeadTableCount() {
+  const cfg = await loadPipelineConfig();
+  const runtimeEnv = await getRuntimeEnv();
+  const countSql = `
+SELECT COUNT(*) AS total_rows
+FROM \`${cfg.projectId}.${cfg.dataset}.dashboard_leads_current\`
+`;
+
+  const rawJson = await runCommand(bqCommand, [
     `--project_id=${cfg.projectId}`,
     "query",
     "--use_legacy_sql=false",
     "--format=prettyjson",
-    sqlOneLine,
-  ]);
+  ], { env: runtimeEnv, timeoutMs: 60000, shell: true, input: countSql });
 
   const rows = JSON.parse(rawJson);
-  return rows.map(toLeadRecord);
+  const total = Number(rows?.[0]?.total_rows ?? 0);
+  return Number.isFinite(total) ? total : 0;
+}
+
+async function fetchLiveLeadsCached({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && leadsCache.generatedAt && now < leadsCache.cacheUntil) {
+    return {
+      leads: leadsCache.leads,
+      generatedAt: leadsCache.generatedAt,
+      totalAvailable: leadsCache.totalAvailable,
+      cacheHit: true,
+    };
+  }
+
+  try {
+    const [leads, totalAvailable] = await Promise.all([
+      fetchLiveLeads(),
+      fetchLiveLeadTableCount().catch(() => null),
+    ]);
+    const generatedAt = new Date().toISOString();
+    leadsCache = {
+      leads,
+      generatedAt,
+      totalAvailable,
+      cacheUntil: Date.now() + LEADS_CACHE_TTL_MS,
+    };
+    await writeLeadsSnapshot(leads, generatedAt, totalAvailable);
+    return {
+      leads,
+      generatedAt,
+      totalAvailable,
+      cacheHit: false,
+      stale: false,
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn("[dashboard-api] live lead fetch failed; using stale cache:", detail);
+    if (leadsCache.leads.length > 0 && leadsCache.generatedAt) {
+      return {
+        leads: leadsCache.leads,
+        generatedAt: leadsCache.generatedAt,
+        totalAvailable: leadsCache.totalAvailable,
+        cacheHit: true,
+        stale: true,
+      };
+    }
+    throw error;
+  }
+}
+
+function warmLeadsCacheInBackground() {
+  fetchLiveLeadsCached({ force: true }).catch((error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn("[dashboard-api] background lead cache warmup failed:", detail);
+  });
 }
 
 async function appendHistory(entry) {
@@ -259,11 +842,12 @@ async function appendHistory(entry) {
   await writeHistory(sliced);
 }
 
-app.get("/api/leads", async (_req, res) => {
+app.get("/api/leads", async (req, res) => {
   try {
-    const leads = await fetchLiveLeads();
+    const force = String(req.query.force || "").trim() === "1";
+    const leadPayload = await fetchLiveLeadsCached({ force });
     const outcomes = await readOutcomes();
-    const mergedLeads = leads.map((lead) => {
+    const mergedLeads = leadPayload.leads.map((lead) => {
       const outcome = outcomes[lead.id] || {};
       return {
         ...lead,
@@ -277,7 +861,10 @@ app.get("/api/leads", async (_req, res) => {
     res.json({
       ok: true,
       count: mergedLeads.length,
-      generatedAt: new Date().toISOString(),
+      totalAvailable: leadPayload.totalAvailable,
+      generatedAt: leadPayload.generatedAt,
+      cacheHit: leadPayload.cacheHit,
+      stale: !!leadPayload.stale,
       leads: mergedLeads,
     });
   } catch (error) {
@@ -365,6 +952,7 @@ app.post("/api/refresh-leads", async (_req, res) => {
   const pullId = `pull-${Date.now()}`;
   currentPull = {
     id: pullId,
+    mode: "refresh",
     status: "running",
     startedAt,
   };
@@ -385,19 +973,26 @@ app.post("/api/refresh-leads", async (_req, res) => {
 
   const startMs = Date.now();
   try {
-    await runCommand("python", ["-m", "pipeline.cli", "run-full"], {
+    const runtimeEnv = await getRuntimeEnv();
+    const pythonCommand = await resolvePythonCommand();
+    await runCommand(pythonCommand, ["-m", "pipeline.cli", "refresh-leads-v3"], {
       cwd: repoRoot,
+      env: runtimeEnv,
+      timeoutMs: 180000,
     });
 
     const endedAt = new Date().toISOString();
     const durationSeconds = Math.round((Date.now() - startMs) / 1000);
     currentPull = {
       id: pullId,
+      mode: "refresh",
       status: "success",
       startedAt,
       endedAt,
       durationSeconds,
     };
+
+    warmLeadsCacheInBackground();
 
     await appendHistory({
       id: pullId,
@@ -405,7 +1000,7 @@ app.post("/api/refresh-leads", async (_req, res) => {
       startedAt,
       endedAt,
       durationSeconds,
-      message: "Pipeline run-full completed.",
+      message: "Sales priority refresh completed.",
     });
   } catch (error) {
     const endedAt = new Date().toISOString();
@@ -414,6 +1009,97 @@ app.post("/api/refresh-leads", async (_req, res) => {
 
     currentPull = {
       id: pullId,
+      mode: "refresh",
+      status: "failed",
+      startedAt,
+      endedAt,
+      durationSeconds,
+      error: detail,
+    };
+
+    await appendHistory({
+      id: pullId,
+      status: "failed",
+      startedAt,
+      endedAt,
+      durationSeconds,
+      message: detail,
+    });
+  }
+});
+
+app.post("/api/full-pipeline", async (_req, res) => {
+  if (currentPull?.status === "running") {
+    res.status(409).json({
+      ok: false,
+      error: "A pull is already running.",
+      currentPull,
+    });
+    return;
+  }
+
+  const startedAt = new Date().toISOString();
+  const pullId = `pull-${Date.now()}`;
+  currentPull = {
+    id: pullId,
+    mode: "full",
+    status: "running",
+    startedAt,
+  };
+
+  appendHistory({
+    id: pullId,
+    status: "running",
+    startedAt,
+    endedAt: null,
+    durationSeconds: null,
+    message: "Full pipeline started.",
+  }).catch(() => {});
+
+  res.json({
+    ok: true,
+    pull: currentPull,
+  });
+
+  const startMs = Date.now();
+  try {
+    const runtimeEnv = await getRuntimeEnv();
+    const pythonCommand = await resolvePythonCommand();
+    await runCommand(pythonCommand, ["-m", "pipeline.cli", "run-full"], {
+      cwd: repoRoot,
+      env: runtimeEnv,
+      timeoutMs: 900000,
+    });
+
+    const endedAt = new Date().toISOString();
+    const durationSeconds = Math.round((Date.now() - startMs) / 1000);
+    currentPull = {
+      id: pullId,
+      mode: "full",
+      status: "success",
+      startedAt,
+      endedAt,
+      durationSeconds,
+    };
+
+    warmLeadsCacheInBackground();
+
+    await appendHistory({
+      id: pullId,
+      status: "success",
+      startedAt,
+      endedAt,
+      durationSeconds,
+      message: "Full pipeline run completed.",
+    });
+  } catch (error) {
+    const endedAt = new Date().toISOString();
+    const durationSeconds = Math.round((Date.now() - startMs) / 1000);
+    const detail = error instanceof Error ? error.message : "Full pipeline failed";
+
+    currentPull = {
+      id: pullId,
+      mode: "full",
       status: "failed",
       startedAt,
       endedAt,
@@ -434,4 +1120,20 @@ app.post("/api/refresh-leads", async (_req, res) => {
 
 app.listen(port, () => {
   console.log(`[dashboard-api] running on http://127.0.0.1:${port}`);
+  ensureBigQueryAuth().catch(() => {});
+  readLeadsSnapshot()
+    .then((snapshot) => {
+      if (!snapshot) {
+        return;
+      }
+      leadsCache = {
+        leads: snapshot.leads,
+        generatedAt: snapshot.generatedAt,
+        totalAvailable: snapshot.totalAvailable,
+        cacheUntil: Date.now() + LEADS_CACHE_TTL_MS,
+      };
+    })
+    .finally(() => {
+      warmLeadsCacheInBackground();
+    });
 });

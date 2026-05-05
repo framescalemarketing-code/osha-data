@@ -13,8 +13,10 @@ from pipeline.extract import query_endpoint_to_csv, query_inspection_incremental
 from pipeline.http_client import RequestBudget, SafeHttpClient
 from pipeline.logging_utils import configure_logging
 from pipeline.rate_limit import GlobalRateLimiter
+from pipeline.sql_refresh import run_sql_refresh
 from pipeline.workflows import (
     run_ca_sos_source_ingest,
+    run_city_source_ingest,
     run_enrichment_ingest,
     run_epa_source_ingest,
     run_fda_signals_ingest,
@@ -109,6 +111,9 @@ def _build_parser() -> argparse.ArgumentParser:
     ingest_bay = sub.add_parser("ingest-bayarea", help="Run Bay Area inspection ingest")
     _add_common_run_args(ingest_bay)
 
+    ingest_california = sub.add_parser("ingest-california", help="Run statewide California inspection ingest")
+    _add_common_run_args(ingest_california)
+
     ingest_enrich = sub.add_parser(
         "ingest-enrichment",
         help="Run enrichment endpoint ingest + SQL refresh",
@@ -145,6 +150,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_common_run_args(ingest_ca_sos)
 
+    ingest_city = sub.add_parser(
+        "ingest-city-signals",
+        help="Fetch SF + LA Socrata business licenses filtered to hazardous industries",
+    )
+    _add_common_run_args(ingest_city)
+
     ingest_rss = sub.add_parser(
         "ingest-rss-signals",
         help="Pull RSS safety/news feeds and refresh the RSS company watchlist tables",
@@ -157,11 +168,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_common_run_args(ingest_local)
 
+    refresh_priority = sub.add_parser(
+        "refresh-sales-priority",
+        help="Legacy alias: rebuild dashboard_leads_current using refresh_leads_v3.sql",
+    )
+    _add_common_run_args(refresh_priority)
+
+    refresh_leads_v3 = sub.add_parser(
+        "refresh-leads-v3",
+        help="Rebuild dashboard_leads_current with eye-focused scoring from all 6 OSHA enrichment endpoints",
+    )
+    _add_common_run_args(refresh_leads_v3)
+
     q_inspection = sub.add_parser(
         "query-inspection",
         help="Pull inspection endpoint incrementally to CSV",
     )
-    q_inspection.add_argument("--geo-profile", choices=["socal", "bay_area"], required=True)
+    q_inspection.add_argument("--geo-profile", choices=["california", "socal", "bay_area"], required=True)
     q_inspection.add_argument("--out-csv", required=True)
     q_inspection.add_argument("--checkpoint-path", required=True)
     q_inspection.add_argument("--since-date", default=None)
@@ -197,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
 
     dol_commands = {
         "run-full",
+        "ingest-california",
         "ingest-socal",
         "ingest-bayarea",
         "ingest-enrichment",
@@ -213,6 +237,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "run-full":
         run_full_pipeline(config, client)
+        return 0
+
+    if args.command == "ingest-california":
+        run_inspection_ingest(
+            config=config,
+            client=client,
+            geo_profile="california",
+            table="inspection_california_incremental",
+            csv_file="inspection_california_incremental.csv",
+            checkpoint_file="inspection_california_checkpoint.json",
+            max_pages=2,
+        )
         return 0
 
     if args.command == "ingest-socal":
@@ -263,12 +299,33 @@ def main(argv: list[str] | None = None) -> int:
         run_ca_sos_source_ingest(config)
         return 0
 
+    if args.command == "ingest-city-signals":
+        run_city_source_ingest(config)
+        return 0
+
     if args.command == "ingest-rss-signals":
         run_rss_signals_ingest(config)
         return 0
 
     if args.command == "ingest-local-osha-downloads":
         run_local_download_ingest(config)
+        return 0
+
+    if args.command == "refresh-sales-priority":
+        # Keep backward compatibility for older API/UI callers while using the v3 schema.
+        run_sql_refresh(
+            config=config,
+            sql_filename="refresh_leads_v3.sql",
+            project_id=config.project_id,
+        )
+        return 0
+
+    if args.command == "refresh-leads-v3":
+        run_sql_refresh(
+            config=config,
+            sql_filename="refresh_leads_v3.sql",
+            project_id=config.project_id,
+        )
         return 0
 
     if args.command == "query-inspection":

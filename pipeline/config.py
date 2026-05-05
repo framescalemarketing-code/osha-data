@@ -100,6 +100,9 @@ class PipelineConfig:
     nih_dataset: str
     ca_sos_project_id: str
     ca_sos_dataset: str
+    city_signals_project_id: str
+    city_signals_dataset: str
+    socrata_app_token: str
     api_key: str
     openfda_api_key: str
     ca_sos_subscription_key: str
@@ -176,6 +179,9 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
     nih_dataset = env_value("NIH_BQ_DATASET", dotenv_values, "nih_raw")
     ca_sos_project_id = env_value("CA_SOS_PROJECT_ID", dotenv_values, project_id)
     ca_sos_dataset = env_value("CA_SOS_BQ_DATASET", dotenv_values, "ca_sos_raw")
+    city_signals_project_id = env_value("CITY_SIGNALS_PROJECT_ID", dotenv_values, project_id)
+    city_signals_dataset = env_value("CITY_SIGNALS_BQ_DATASET", dotenv_values, "city_signals_raw")
+    socrata_app_token = env_value("SOCRATA_APP_TOKEN", dotenv_values, "")
     api_key = env_value("DOL_API_KEY", dotenv_values, "")
     openfda_api_key = env_value("OPENFDA_API_KEY", dotenv_values, "")
     ca_sos_subscription_key = env_value("CA_SOS_SUBSCRIPTION_KEY", dotenv_values, "")
@@ -295,6 +301,9 @@ def load_pipeline_config(repo_root: Path) -> PipelineConfig:
         nih_dataset=nih_dataset,
         ca_sos_project_id=ca_sos_project_id,
         ca_sos_dataset=ca_sos_dataset,
+        city_signals_project_id=city_signals_project_id,
+        city_signals_dataset=city_signals_dataset,
+        socrata_app_token=socrata_app_token,
         api_key=api_key,
         openfda_api_key=openfda_api_key,
         ca_sos_subscription_key=ca_sos_subscription_key,

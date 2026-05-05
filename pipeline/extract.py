@@ -50,6 +50,10 @@ INSPECTION_COLUMNS = [
 
 
 def _geo_conditions(geo_profile: str) -> list[dict[str, Any]]:
+    if geo_profile == "california":
+        return [
+            {"field": "site_state", "operator": "eq", "value": "CA"},
+        ]
     if geo_profile == "socal":
         return [
             {"field": "site_state", "operator": "eq", "value": "CA"},
@@ -82,7 +86,7 @@ def _geo_conditions(geo_profile: str) -> list[dict[str, Any]]:
                 ]
             },
         ]
-    raise ValueError("geo_profile must be one of: socal, bay_area")
+    raise ValueError("geo_profile must be one of: california, socal, bay_area")
 
 
 def build_inspection_filter(

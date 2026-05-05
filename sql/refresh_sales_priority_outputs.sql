@@ -43,7 +43,9 @@ CREATE SCHEMA IF NOT EXISTS `{{FDA_PROJECT_ID}}.{{FDA_DATASET}}`;
 CREATE SCHEMA IF NOT EXISTS `{{EPA_PROJECT_ID}}.{{EPA_DATASET}}`;
 CREATE SCHEMA IF NOT EXISTS `{{NIH_PROJECT_ID}}.{{NIH_DATASET}}`;
 
-CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_followup_all_current` AS
+DROP TABLE IF EXISTS `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_followup_all_current`;
+CREATE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_followup_all_current`
+CLUSTER BY `Latest Inspection ID`, `Region`, `Account Name` AS
 SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_followup_sandiego_current`
 UNION ALL
 SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_followup_bayarea_current`;
@@ -1083,7 +1085,9 @@ SELECT
 FROM deduped
 WHERE overall_sales_score >= 5;
 
-CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current` AS
+DROP TABLE IF EXISTS `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`;
+CREATE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
+CLUSTER BY `Region`, `Overall Sales Priority`, `Overall Sales Score` AS
 WITH base AS (
   SELECT
     s.*,
@@ -1270,7 +1274,9 @@ SELECT
   `CA Federal Spend Signal`
 FROM classified;
 
-CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_actionable_current` AS
+DROP TABLE IF EXISTS `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_actionable_current`;
+CREATE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_actionable_current`
+CLUSTER BY `Region`, `Overall Sales Priority`, `Overall Sales Score` AS
 SELECT * EXCEPT(company_dedup_rn)
 FROM (
   SELECT *,
@@ -1308,3 +1314,64 @@ WHERE `Region` = 'San Diego';
 CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_bayarea_current` AS
 SELECT * FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_current`
 WHERE `Region` = 'Bay Area';
+
+CREATE OR REPLACE TABLE `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.dashboard_leads_current`
+CLUSTER BY `Region`, `Overall Sales Priority`, `Overall Sales Score` AS
+WITH followup_latest AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      f.`Latest Inspection ID`,
+      f.`Account Name`,
+      f.`Region`,
+      f.`Case Open Date`,
+      f.`Latest Case Close Date`,
+      f.`Last Violation Event Date`,
+      f.`Last Accident Date`,
+      f.`Has Complaint Signal`,
+      f.`Standards Cited`,
+      f.`Company Latest Load Timestamp`,
+      ROW_NUMBER() OVER (
+        PARTITION BY f.`Latest Inspection ID`, f.`Region`, f.`Account Name`
+        ORDER BY f.`Company Latest Load Timestamp` DESC NULLS LAST
+      ) AS rn
+    FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.sales_followup_all_current` f
+  )
+  WHERE rn = 1
+)
+SELECT
+  a.`Latest Inspection ID`,
+  a.`Account Name`,
+  a.`Region`,
+  a.`Site City`,
+  a.`Industry Segment`,
+  a.`Ownership Type`,
+  a.`Overall Sales Score`,
+  a.`Eyewear Evidence Score`,
+  a.`Overall Sales Priority`,
+  a.`Eyewear Need Tier`,
+  a.`Should Look At Now`,
+  a.`Matched Sources`,
+  a.`Reason To Contact`,
+  a.`Why Now`,
+  a.`Recent Inspection Context`,
+  a.`Has Open Violations`,
+  a.`Severe Incident Signal`,
+  a.`Direct Prescription Citation Count`,
+  a.`Prescription Signal Count`,
+  a.`Fit Selection Citation Count`,
+  a.`Eye Face Citation Count`,
+  a.`General PPE Citation Count`,
+  a.`Estimated Employee Band`,
+  f.`Case Open Date`,
+  f.`Latest Case Close Date`,
+  f.`Last Violation Event Date`,
+  f.`Last Accident Date`,
+  f.`Has Complaint Signal`,
+  f.`Standards Cited`,
+  f.`Company Latest Load Timestamp`
+FROM `{{OSHA_PROJECT_ID}}.{{OSHA_DATASET}}.eyewear_opportunity_actionable_current` a
+LEFT JOIN followup_latest f
+  ON a.`Latest Inspection ID` = f.`Latest Inspection ID`
+ AND a.`Region` = f.`Region`
+ AND a.`Account Name` = f.`Account Name`;

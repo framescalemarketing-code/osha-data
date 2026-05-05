@@ -48,18 +48,19 @@ import SourceRoundedIcon from "@mui/icons-material/SourceRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import { leads as fallbackLeads } from "./data";
 import { toViolationDetails } from "./oshaStandards";
-import type { DashboardSettings, IncidentType, LeadRecord, NavView } from "./types";
+import type { DashboardSettings, IncidentDateSource, IncidentType, LeadRecord, LeadTier, NavView } from "./types";
 
 const drawerWidth = 300;
 
 const initialSettings: DashboardSettings = {
   compactCards: false,
-  showOnlyContactReady: true,
+  showOnlyContactReady: false,
   themeName: "signal",
 };
 
 type PullStatus = {
   id: string;
+  mode?: "refresh" | "full";
   status: "running" | "success" | "failed";
   startedAt: string;
   endedAt?: string;
@@ -79,8 +80,8 @@ type PullHistoryItem = {
 const navItems: Array<{ view: NavView; label: string; icon: React.ReactNode }> = [
   { view: "overview", label: "Overview", icon: <AssessmentRoundedIcon /> },
   { view: "lead-queue", label: "Lead Queue", icon: <FilterAltRoundedIcon /> },
-  { view: "hot-accounts", label: "Hot Accounts", icon: <LocalFireDepartmentRoundedIcon /> },
-  { view: "research-needed", label: "Research Needed", icon: <FlagRoundedIcon /> },
+  { view: "hot-eye-leads", label: "Hot Eye Leads", icon: <LocalFireDepartmentRoundedIcon /> },
+  { view: "ppe-opportunity", label: "PPE Opportunity", icon: <FlagRoundedIcon /> },
   { view: "source-signals", label: "Source Signals", icon: <SourceRoundedIcon /> },
   { view: "saved-views", label: "Saved Views", icon: <FolderSpecialRoundedIcon /> },
   { view: "settings", label: "Settings", icon: <SettingsRoundedIcon /> },
@@ -96,6 +97,15 @@ const incidentOptions: IncidentType[] = [
   "General PPE",
 ];
 
+const CONTACT_READY_ACTIONS: LeadRecord["action"][] = [
+  "Ideal Call Now",
+  "Call Now",
+  "Call This Week",
+];
+
+const INITIAL_RENDER_LIMIT = 60;
+const RENDER_STEP = 60;
+
 function matchesSearch(lead: LeadRecord, query: string) {
   if (!query.trim()) {
     return true;
@@ -106,15 +116,15 @@ function matchesSearch(lead: LeadRecord, query: string) {
     lead.company,
     lead.city,
     lead.region,
+    lead.county || "",
     lead.industry,
-    lead.reasonToContact,
-    lead.whyNow,
-    lead.recentInspectionContext,
+    lead.leadTier,
+    lead.pitchRecommendation,
     lead.incidentType,
     lead.incidentDate,
-    lead.priority,
     lead.action,
-    lead.matchedSources.join(" "),
+    lead.emphasisCodes?.join(" ") ?? "",
+    lead.eyeInjuryDescriptions?.join(" ") ?? "",
     lead.rawViolationCodes.join(" "),
     normalizedViolations.map((item) => `${item.title} ${item.plainEnglish}`).join(" "),
   ]
@@ -122,6 +132,47 @@ function matchesSearch(lead: LeadRecord, query: string) {
     .toLowerCase();
 
   return haystack.includes(query.trim().toLowerCase());
+}
+
+function getTierColor(tier: LeadTier): { bg: string; text: string; chipColor: "error" | "warning" | "info" | "default" } {
+  switch (tier) {
+    case "P0 Hot Eye":
+      return { bg: "#fef2f2", text: "#991b1b", chipColor: "error" };
+    case "P1 Eye Violation":
+      return { bg: "#fff7ed", text: "#9a3412", chipColor: "warning" };
+    case "P2 PPE Opportunity":
+      return { bg: "#fefce8", text: "#713f12", chipColor: "info" };
+    default:
+      return { bg: "#f8fafc", text: "#475569", chipColor: "default" };
+  }
+}
+
+function getTierLabel(tier: LeadTier): string {
+  switch (tier) {
+    case "P0 Hot Eye":
+      return "🔴 Hot Eye Lead";
+    case "P1 Eye Violation":
+      return "🟠 Eye Violation";
+    case "P2 PPE Opportunity":
+      return "🟡 PPE Opportunity";
+    default:
+      return "⚪ Industry Fit";
+  }
+}
+
+function getTierLabelForLead(lead: LeadRecord): string {
+  // City-license leads can be elevated by industry fit scoring without OSHA incident evidence.
+  if (
+    lead.leadTier === "P1 Eye Violation"
+    && lead.eyeViolationCount <= 0
+    && lead.eyeInjuryCount <= 0
+    && lead.prescriptionViolationCount <= 0
+    && !isTrueIncidentSource(lead.incidentDateSource)
+  ) {
+    return "🟠 High Hazard Fit";
+  }
+
+  return getTierLabel(lead.leadTier ?? "P3 Industry Fit");
 }
 
 function getPriorityTone(priority: LeadRecord["priority"]) {
@@ -139,6 +190,7 @@ function getPriorityTone(priority: LeadRecord["priority"]) {
 
 function getActionTone(action: LeadRecord["action"]) {
   switch (action) {
+    case "Ideal Call Now":
     case "Call Now":
       return "error";
     case "Call This Week":
@@ -178,76 +230,236 @@ function StatCard({
 
 function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
   const normalizedViolations = toViolationDetails(lead.rawViolationCodes);
+  const tier = lead.leadTier ?? "P3 Industry Fit";
+  const tierStyle = getTierColor(tier);
+  const pad = compact ? 2 : 2.5;
+
+  const compactChipSx = {
+    height: 24,
+    maxWidth: "100%",
+    "& .MuiChip-label": {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    },
+  };
 
   return (
-    <Card sx={{ height: "100%" }}>
-      <CardContent sx={{ p: compact ? 2 : 3 }}>
-        <Stack direction="row" justifyContent="space-between" spacing={2}>
-          <Box>
-            <Typography variant="h6">{lead.company}</Typography>
-            <Typography color="text.secondary" variant="body2">
-              {lead.city}, {lead.region} · {lead.industry}
+    <Card
+      sx={{
+        height: "100%",
+        borderTop: `3px solid ${tierStyle.text}`,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── HEADER ── */}
+      <Box sx={{ bgcolor: tierStyle.bg, px: pad, pt: pad, pb: 1.25 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="h6" sx={{ fontSize: "1.1rem", fontWeight: 700, lineHeight: 1.2 }} noWrap>
+              {lead.company}
+            </Typography>
+            <Typography color="text.secondary" variant="caption" sx={{ display: "block", lineHeight: 1.3 }}>
+              {lead.city}
+              {lead.county ? `, ${lead.county} County` : ""} · {lead.region}
+              {lead.distanceFromMiramarMiles != null ? ` · ${lead.distanceFromMiramarMiles.toFixed(1)} mi from Miramar` : ""}
+            </Typography>
+            <Typography color="text.secondary" variant="caption" sx={{ display: "block", lineHeight: 1.3 }}>
+              {lead.industry || lead.ownerType}
             </Typography>
           </Box>
-          <Stack alignItems="flex-end" spacing={1}>
-            <Chip color={getPriorityTone(lead.priority)} label={lead.priority} size="small" />
-            <Chip color={getActionTone(lead.action)} label={lead.action} size="small" variant="outlined" />
+          <Stack alignItems="flex-end" spacing={0.5} flexShrink={0}>
+            <Chip label={getTierLabelForLead(lead)} size="small" sx={{ ...compactChipSx, bgcolor: tierStyle.text, color: "#fff", fontWeight: 700 }} />
+            <Chip
+              color={getActionTone(lead.action)}
+              label={lead.action}
+              size="small"
+              variant="outlined"
+              sx={{ ...compactChipSx, fontSize: "0.75rem" }}
+            />
           </Stack>
         </Stack>
 
-        <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 2 }}>
-          <Chip label={`Score ${lead.overallSalesScore}`} size="small" />
-          <Chip label={`Evidence ${lead.eyewearEvidenceScore}`} size="small" />
-          <Chip label={lead.needTier} size="small" />
-          <Chip label={lead.employeeBand} size="small" />
-          <Chip label={lead.incidentType} size="small" variant="outlined" />
-          <Chip label={lead.incidentDate || "No incident date"} size="small" variant="outlined" />
-          <Chip label={lead.accountStatus} size="small" variant="outlined" />
+        {/* Score bar - single row with flex wrap */}
+        <Stack direction="row" flexWrap="wrap" gap={0.6} sx={{ mt: 1 }}>
+          <Chip label={`Eye ${lead.eyeLeadScore ?? 0}`} size="small" sx={compactChipSx} />
+          <Chip label={`PPE ${lead.ppeScore ?? 0}`} size="small" sx={compactChipSx} />
+          <Chip label={`Total ${lead.finalScore ?? 0}`} size="small" variant="outlined" sx={compactChipSx} />
+          <Chip label={lead.employeeBand} size="small" variant="outlined" sx={compactChipSx} />
+          {lead.totalCurrentPenalty > 0 ? (
+            <Chip
+              label={`$${lead.totalCurrentPenalty.toLocaleString()}`}
+              size="small"
+              color="error"
+              variant="outlined"
+              sx={compactChipSx}
+            />
+          ) : null}
+          {lead.openViolations ? (
+            <Chip color="error" label="Open" size="small" sx={compactChipSx} />
+          ) : null}
+          {lead.willfulViolationCount > 0 ? (
+            <Chip color="error" label="Willful" size="small" sx={compactChipSx} />
+          ) : null}
+          {lead.repeatViolationCount > 0 ? (
+            <Chip color="warning" label="Repeat" size="small" sx={compactChipSx} />
+          ) : null}
         </Stack>
+      </Box>
 
-        <Typography sx={{ mt: 2 }} variant="body2">
-          {lead.reasonToContact}
-        </Typography>
-        <Typography sx={{ mt: 1 }} color="text.secondary" variant="body2">
-          {lead.whyNow}
-        </Typography>
-
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="subtitle2">Violation and incident snapshot</Typography>
-          <Typography sx={{ mt: 0.75 }} color="text.secondary" variant="body2">
-            Incident date: {lead.incidentDate || "Unknown"} · Incident type: {lead.incidentType}
+      <CardContent sx={{ flex: 1, pt: 1.25, pb: 1.25, px: pad, overflow: "auto" }}>
+        {/* ── PITCH ── */}
+        {lead.pitchRecommendation && (
+          <Typography variant="body2" sx={{ fontStyle: "italic", color: "text.secondary", mb: 1 }}>
+            {lead.pitchRecommendation}
           </Typography>
-          <Stack spacing={1} sx={{ mt: 1.25 }}>
-            {normalizedViolations.length > 0 ? (
-              normalizedViolations.map((violation) => (
-                <Box key={`${lead.id}-${violation.code}`}>
-                  <Typography variant="body2">
-                    <strong>{violation.code}</strong> · {violation.title}
+        )}
+
+        {/* ── EYE INJURIES ── */}
+        {lead.eyeInjuryCount > 0 && (
+          <Box
+            sx={{
+              bgcolor: "#fef2f2",
+              border: "1px solid #fca5a5",
+              borderRadius: 1.5,
+              px: 1.25,
+              py: 0.875,
+              mb: 1,
+            }}
+          >
+            <Typography variant="subtitle2" sx={{ fontSize: "0.85rem", fontWeight: 600, color: "error.dark", mb: 0.5 }}>
+              Eye Injuries ({lead.eyeInjuryCount}{lead.fatalityCount > 0 ? ` +${lead.fatalityCount} fatal` : ""})
+            </Typography>
+            {lead.eyeInjuryDescriptions && lead.eyeInjuryDescriptions.length > 0 && (
+              <Stack spacing={0.25}>
+                {lead.eyeInjuryDescriptions.slice(0, 2).map((desc, i) => (
+                  <Typography key={i} variant="caption" color="error.dark" sx={{ lineHeight: 1.3 }}>
+                    {desc}
                   </Typography>
-                  <Typography color="text.secondary" variant="body2">
-                    {violation.plainEnglish}
-                  </Typography>
-                </Box>
-              ))
-            ) : (
-              <Typography color="text.secondary" variant="body2">
-                No mapped OSHA standard codes were available for this lead.
+                ))}
+              </Stack>
+            )}
+            {lead.lastEyeInjuryDate && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                {lead.lastEyeInjuryDate}
               </Typography>
             )}
-          </Stack>
-        </Box>
+          </Box>
+        )}
 
-        <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 2 }}>
-          {lead.matchedSources.map((source) => (
-            <Chip key={source} label={source} size="small" variant="outlined" />
-          ))}
-          {lead.openViolations ? <Chip color="error" label="Open violations" size="small" /> : null}
-          {lead.severeIncident ? <Chip color="warning" label="Severe incident" size="small" /> : null}
+        {/* ── EYE/FACE VIOLATIONS ── */}
+        {lead.eyeViolationCount > 0 && (
+          <Box
+            sx={{
+              bgcolor: "#fff7ed",
+              border: "1px solid #fdba74",
+              borderRadius: 1.5,
+              px: 1.25,
+              py: 0.875,
+              mb: 1,
+            }}
+          >
+            <Typography variant="subtitle2" sx={{ fontSize: "0.85rem", fontWeight: 600, color: "warning.dark", mb: 0.5 }}>
+              Eye/Face Citations ({lead.eyeViolationCount}
+              {lead.openEyeViolationCount > 0 ? `, ${lead.openEyeViolationCount} open` : ""})
+              {lead.prescriptionViolationCount > 0 ? " *Rx" : ""}
+            </Typography>
+            <Stack spacing={0.5}>
+              {normalizedViolations
+                .filter((v) => v.code.startsWith("1910.133") || v.code.startsWith("1926.102"))
+                .slice(0, 1)
+                .map((v) => (
+                  <Box key={v.code}>
+                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                      {v.code}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
+                      {v.plainEnglish}
+                    </Typography>
+                  </Box>
+                ))}
+            </Stack>
+          </Box>
+        )}
+
+        {/* ── GENERAL PPE VIOLATIONS ── */}
+        {lead.generalPpeViolationCount > 0 && (
+          <Box
+            sx={{
+              bgcolor: "#fefce8",
+              border: "1px solid #fde047",
+              borderRadius: 1.5,
+              px: 1.25,
+              py: 0.875,
+              mb: 1,
+            }}
+          >
+            <Typography variant="subtitle2" sx={{ fontSize: "0.85rem", fontWeight: 600, color: "#713f12", mb: 0.5 }}>
+              General PPE ({lead.generalPpeViolationCount}
+              {lead.openGeneralPpeViolationCount > 0 ? `, ${lead.openGeneralPpeViolationCount} open` : ""})
+            </Typography>
+            <Stack spacing={0.5}>
+              {normalizedViolations
+                .filter((v) => v.code.startsWith("1910.132") || v.code.startsWith("1926.95"))
+                .slice(0, 1)
+                .map((v) => (
+                  <Box key={v.code}>
+                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                      {v.code}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
+                      {v.plainEnglish}
+                    </Typography>
+                  </Box>
+                ))}
+            </Stack>
+          </Box>
+        )}
+
+        {/* ── EMPHASIS PROGRAMS ── */}
+        {lead.emphasisCodes && lead.emphasisCodes.length > 0 && (
+          <Box sx={{ mb: 1 }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, display: "block", mb: 0.5 }}>
+              Emphasis {lead.eyeEmphasisCount > 0 ? "(Eye/Face)" : ""}
+            </Typography>
+            <Stack direction="row" flexWrap="wrap" gap={0.5}>
+              {lead.emphasisCodes.slice(0, 3).map((code) => (
+                <Chip key={code} label={code} size="small" color="info" variant="outlined" sx={{ height: 22, fontSize: "0.7rem" }} />
+              ))}
+            </Stack>
+          </Box>
+        )}
+
+        {/* ── QUICK SIGNALS ── */}
+        <Stack direction="row" flexWrap="wrap" gap={0.5}>
+          {lead.relatedInspectionCount > 0 && (
+            <Chip label={`+${lead.relatedInspectionCount} follow-up`} size="small" color="warning" variant="outlined" sx={{ height: 22, fontSize: "0.7rem" }} />
+          )}
+          {lead.totalInspectionCount > 1 && (
+            <Chip label={`${lead.totalInspectionCount} inspections`} size="small" variant="outlined" sx={{ height: 22, fontSize: "0.7rem" }} />
+          )}
+          {lead.contestedViolationCount > 0 && (
+            <Chip label="Contested" size="small" variant="outlined" sx={{ height: 22, fontSize: "0.7rem" }} />
+          )}
         </Stack>
+
+        {/* ── DATE LINE ── */}
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75, lineHeight: 1.2 }}>
+          {lead.lastEyeInjuryDate
+            ? `Eye injury: ${lead.lastEyeInjuryDate}`
+            : lead.incidentDate
+            ? `${getIncidentDateLabel(lead.incidentDateSource)}: ${lead.incidentDate}`
+            : "No OSHA incident/violation date on record"}
+          {lead.faceHeadInjuryCount > 0 ? ` • ${lead.faceHeadInjuryCount} face/head` : ""}
+        </Typography>
       </CardContent>
     </Card>
   );
 }
+
+const MemoLeadCard = React.memo(LeadCard);
 
 type OutreachStatus = "new" | "attempted" | "connected" | "won" | "lost";
 const outreachOptions: Array<{ value: OutreachStatus; label: string }> = [
@@ -277,7 +489,7 @@ function OutreachCard({
   }, [lead.id, lead.outreachStatus, lead.outreachNotes]);
 
   return (
-    <Card sx={{ mt: 1.5 }}>
+    <Card sx={{ mt: 1.25 }}>
       <CardContent sx={{ pt: 2 }}>
         <Typography variant="subtitle2">Outreach Tracking</Typography>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ mt: 1.25 }}>
@@ -306,6 +518,7 @@ function OutreachCard({
           <Button
             variant="contained"
             disabled={saving}
+            sx={{ width: { xs: "100%", sm: "auto" }, minWidth: { sm: 92 } }}
             onClick={async () => {
               setSaving(true);
               try {
@@ -326,6 +539,8 @@ function OutreachCard({
   );
 }
 
+const MemoOutreachCard = React.memo(OutreachCard);
+
 function formatPullTime(isoTime?: string | null) {
   if (!isoTime) return "N/A";
   const date = new Date(isoTime);
@@ -333,36 +548,66 @@ function formatPullTime(isoTime?: string | null) {
   return date.toLocaleString();
 }
 
+function getIncidentDateLabel(source?: IncidentDateSource) {
+  switch (source) {
+    case "accident":
+      return "Accident date";
+    case "violation-event":
+      return "Violation event date";
+    case "case-close":
+      return "Case close date";
+    case "case-open":
+      return "Case open date";
+    default:
+      return "Incident date";
+  }
+}
+
+function isTrueIncidentSource(source?: IncidentDateSource) {
+  return source === "accident" || source === "violation-event";
+}
+
 export default function App() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [activeView, setActiveView] = React.useState<NavView>("overview");
   const [query, setQuery] = React.useState("");
   const [regionFilter, setRegionFilter] = React.useState("All");
+  const [countyFilter, setCountyFilter] = React.useState("All");
   const [priorityFilter, setPriorityFilter] = React.useState("All");
   const [sourceFilter, setSourceFilter] = React.useState("All");
   const [incidentFilter, setIncidentFilter] = React.useState("All");
   const [settings, setSettings] = React.useState(initialSettings);
   const [liveLeads, setLiveLeads] = React.useState<LeadRecord[]>([]);
+  const [totalAvailableLeads, setTotalAvailableLeads] = React.useState<number | null>(null);
   const [loadingLeads, setLoadingLeads] = React.useState(true);
   const [leadLoadError, setLeadLoadError] = React.useState<string | null>(null);
   const [pullStatus, setPullStatus] = React.useState<PullStatus | null>(null);
   const [pullHistory, setPullHistory] = React.useState<PullHistoryItem[]>([]);
   const [triggeringPull, setTriggeringPull] = React.useState(false);
+  const [triggeringFullPull, setTriggeringFullPull] = React.useState(false);
+  const [reloadingBigQuery, setReloadingBigQuery] = React.useState(false);
+  const [renderLimitByView, setRenderLimitByView] = React.useState({
+    "lead-queue": INITIAL_RENDER_LIMIT,
+    "hot-eye-leads": INITIAL_RENDER_LIMIT,
+    "ppe-opportunity": INITIAL_RENDER_LIMIT,
+  });
 
-  const loadLeads = React.useCallback(async () => {
+  const loadLeads = React.useCallback(async (force = false) => {
     setLoadingLeads(true);
     setLeadLoadError(null);
     try {
-      const response = await fetch("/api/leads");
+      const response = await fetch(force ? "/api/leads?force=1" : "/api/leads");
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Failed to load leads");
       }
       setLiveLeads(payload.leads || []);
+      setTotalAvailableLeads(Number.isFinite(Number(payload.totalAvailable)) ? Number(payload.totalAvailable) : null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load leads";
       setLeadLoadError(message);
       setLiveLeads([]);
+      setTotalAvailableLeads(null);
     } finally {
       setLoadingLeads(false);
     }
@@ -413,7 +658,7 @@ export default function App() {
 
   React.useEffect(() => {
     if (pullStatus && pullStatus.status !== "running") {
-      loadLeads();
+      loadLeads(false);
     }
   }, [pullStatus, loadLeads]);
 
@@ -436,6 +681,38 @@ export default function App() {
       setLeadLoadError(error instanceof Error ? error.message : "Failed to trigger pull");
     } finally {
       setTriggeringPull(false);
+    }
+  };
+
+  const onTriggerFullPull = async () => {
+    setTriggeringFullPull(true);
+    try {
+      const response = await fetch("/api/full-pipeline", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Could not start full pull");
+      }
+      setPullStatus(payload.pull);
+      await loadPullHistory();
+    } catch (error) {
+      setLeadLoadError(error instanceof Error ? error.message : "Failed to trigger full pull");
+    } finally {
+      setTriggeringFullPull(false);
+    }
+  };
+
+  const onReloadBigQuery = async () => {
+    setReloadingBigQuery(true);
+    try {
+      await loadLeads(true);
+      await loadPullStatus();
+    } finally {
+      setReloadingBigQuery(false);
     }
   };
 
@@ -473,53 +750,191 @@ export default function App() {
 
   const leadData = liveLeads.length > 0 ? liveLeads : fallbackLeads;
 
-  const visibleLeads = leadData.filter((lead) => {
-    if (!matchesSearch(lead, query)) return false;
-    if (regionFilter !== "All" && lead.region !== regionFilter) return false;
-    if (priorityFilter !== "All" && lead.priority !== priorityFilter) return false;
-    if (sourceFilter !== "All" && !lead.matchedSources.includes(sourceFilter)) return false;
-    if (incidentFilter !== "All" && lead.incidentType !== incidentFilter) return false;
-    if (settings.showOnlyContactReady && !["Call Now", "Call This Week", "Research Then Call"].includes(lead.action)) {
-      return false;
+  const regionOptions = React.useMemo(
+    () => Array.from(new Set(leadData.map((lead) => lead.region).filter(Boolean))).sort(),
+    [leadData],
+  );
+
+  const countyOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          leadData
+            .filter((lead) => regionFilter === "All" || lead.region === regionFilter)
+            .map((lead) => lead.county || "")
+            .filter(Boolean),
+        ),
+      ).sort(),
+    [leadData, regionFilter],
+  );
+
+  const sourceOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          leadData
+            .flatMap((lead) => lead.matchedSources || [])
+            .filter(Boolean),
+        ),
+      ).sort(),
+    [leadData],
+  );
+
+  React.useEffect(() => {
+    if (countyFilter !== "All" && !countyOptions.includes(countyFilter)) {
+      setCountyFilter("All");
     }
-    return true;
-  });
+  }, [countyFilter, countyOptions]);
 
-  const hotAccounts = visibleLeads.filter((lead) => lead.action === "Call Now" || lead.priority === "P0 Ideal");
-  const researchNeeded = visibleLeads.filter(
-    (lead) => lead.action === "Research Then Call" || lead.priority === "P2 Research",
-  );
-  const sourceSignalRows = visibleLeads.flatMap((lead) =>
-    lead.matchedSources.map((source) => ({
-      id: `${lead.id}-${source}`,
-      company: lead.company,
-      source,
-      region: lead.region,
-      incidentDate: lead.incidentDate,
-      incidentType: lead.incidentType,
-      codes: lead.rawViolationCodes.join(", "),
-      plainEnglish: toViolationDetails(lead.rawViolationCodes)
-        .map((item) => `${item.code}: ${item.plainEnglish}`)
-        .join(" | "),
-      score: lead.overallSalesScore,
-      note: lead.reasonToContact,
-    })),
+  React.useEffect(() => {
+    if (sourceFilter !== "All" && !sourceOptions.includes(sourceFilter)) {
+      setSourceFilter("All");
+    }
+  }, [sourceFilter, sourceOptions]);
+
+  const visibleLeads = React.useMemo(
+    () =>
+      leadData.filter((lead) => {
+        if (!matchesSearch(lead, query)) return false;
+        if (regionFilter !== "All" && lead.region !== regionFilter) return false;
+        if (countyFilter !== "All" && (lead.county || "") !== countyFilter) return false;
+        if (priorityFilter !== "All" && lead.leadTier !== priorityFilter) return false;
+        if (sourceFilter !== "All" && !lead.matchedSources.includes(sourceFilter)) return false;
+        if (incidentFilter !== "All" && lead.incidentType !== incidentFilter) return false;
+        if (settings.showOnlyContactReady && !CONTACT_READY_ACTIONS.includes(lead.action)) {
+          return false;
+        }
+        return true;
+      }),
+    [leadData, query, regionFilter, countyFilter, priorityFilter, sourceFilter, incidentFilter, settings.showOnlyContactReady],
   );
 
-  const recentIncidents = visibleLeads.filter((lead) => {
-    if (!lead.incidentDate) return false;
-    const daysSinceIncident = Math.floor(
-      (Date.now() - new Date(`${lead.incidentDate}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24),
-    );
-    return daysSinceIncident <= 30;
-  });
+  const contactReadyLoadedCount = React.useMemo(
+    () => leadData.filter((lead) => CONTACT_READY_ACTIONS.includes(lead.action)).length,
+    [leadData],
+  );
+
+  const hasActiveFilters = React.useMemo(
+    () =>
+      regionFilter !== "All" ||
+      countyFilter !== "All" ||
+      priorityFilter !== "All" ||
+      sourceFilter !== "All" ||
+      incidentFilter !== "All" ||
+      query.trim().length > 0 ||
+      settings.showOnlyContactReady,
+    [regionFilter, countyFilter, priorityFilter, sourceFilter, incidentFilter, query, settings.showOnlyContactReady],
+  );
+
+  const clearAllFilters = () => {
+    setRegionFilter("All");
+    setCountyFilter("All");
+    setPriorityFilter("All");
+    setSourceFilter("All");
+    setIncidentFilter("All");
+    setQuery("");
+    setSettings((current) => ({ ...current, showOnlyContactReady: false }));
+  };
+
+  const hotEyeLeads = React.useMemo(
+    () =>
+      visibleLeads.filter(
+        (lead) => lead.leadTier === "P0 Hot Eye" || lead.leadTier === "P1 Eye Violation",
+      ),
+    [visibleLeads],
+  );
+  const hotAccounts = hotEyeLeads; // legacy compat for overview section
+  const monitorLeads = React.useMemo(
+    () => visibleLeads.filter((lead) => lead.leadTier === "P3 Industry Fit"),
+    [visibleLeads],
+  );
+  const contactReadyLeads = React.useMemo(
+    () => visibleLeads.filter((lead) => CONTACT_READY_ACTIONS.includes(lead.action)),
+    [visibleLeads],
+  );
+  const ppeOpportunityLeads = React.useMemo(
+    () => visibleLeads.filter((lead) => lead.leadTier === "P2 PPE Opportunity"),
+    [visibleLeads],
+  );
+  const leadQueueLeads = React.useMemo(() => {
+    if (settings.showOnlyContactReady) {
+      return contactReadyLeads;
+    }
+
+    // Keep queue actionable first, then append a smaller monitor watchlist.
+    const monitorWatchlist = monitorLeads.slice(0, 120);
+    return [...contactReadyLeads, ...monitorWatchlist];
+  }, [contactReadyLeads, monitorLeads, settings.showOnlyContactReady]);
+  const researchNeeded = ppeOpportunityLeads; // legacy compat
+  const sourceSignalRows = React.useMemo(
+    () =>
+      visibleLeads.flatMap((lead) =>
+        lead.matchedSources.map((source) => ({
+          id: `${lead.id}-${source}`,
+          company: lead.company,
+          source,
+          region: lead.region,
+          incidentDate: lead.incidentDate,
+          incidentType: lead.incidentType,
+          codes: lead.rawViolationCodes.join(", "),
+          plainEnglish: toViolationDetails(lead.rawViolationCodes)
+            .map((item) => `${item.code}: ${item.plainEnglish}`)
+            .join(" | "),
+          score: lead.overallSalesScore,
+          note: lead.reasonToContact,
+        })),
+      ),
+    [visibleLeads],
+  );
+
+  const recentIncidents = React.useMemo(
+    () =>
+      visibleLeads.filter((lead) => {
+        const dateStr = lead.lastEyeInjuryDate || (isTrueIncidentSource(lead.incidentDateSource) ? lead.incidentDate : null);
+        if (!dateStr) return false;
+        const daysSinceIncident = Math.floor(
+          (Date.now() - new Date(`${dateStr}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24),
+        );
+        return daysSinceIncident <= 30;
+      }),
+    [visibleLeads],
+  );
+
+  React.useEffect(() => {
+    setRenderLimitByView((current) => ({
+      ...current,
+      "lead-queue": Math.min(current["lead-queue"], Math.max(INITIAL_RENDER_LIMIT, leadQueueLeads.length)),
+      "hot-eye-leads": Math.min(current["hot-eye-leads"], Math.max(INITIAL_RENDER_LIMIT, hotEyeLeads.length)),
+      "ppe-opportunity": Math.min(current["ppe-opportunity"], Math.max(INITIAL_RENDER_LIMIT, ppeOpportunityLeads.length)),
+    }));
+  }, [leadQueueLeads.length, hotEyeLeads.length, ppeOpportunityLeads.length]);
+
+  const leadQueueVisibleRows = React.useMemo(
+    () => leadQueueLeads.slice(0, renderLimitByView["lead-queue"]),
+    [leadQueueLeads, renderLimitByView],
+  );
+  const hotEyeVisibleRows = React.useMemo(
+    () => hotEyeLeads.slice(0, renderLimitByView["hot-eye-leads"]),
+    [hotEyeLeads, renderLimitByView],
+  );
+  const ppeVisibleRows = React.useMemo(
+    () => ppeOpportunityLeads.slice(0, renderLimitByView["ppe-opportunity"]),
+    [ppeOpportunityLeads, renderLimitByView],
+  );
+
+  const loadMoreForView = (view: "lead-queue" | "hot-eye-leads" | "ppe-opportunity") => {
+    setRenderLimitByView((current) => ({
+      ...current,
+      [view]: current[view] + RENDER_STEP,
+    }));
+  };
 
   const navCounts: Record<NavView, number | string> = {
-    overview: visibleLeads.length,
-    "lead-queue": visibleLeads.length,
-    "hot-accounts": hotAccounts.length,
-    "research-needed": researchNeeded.length,
-    "source-signals": sourceSignalRows.length,
+    overview: "",
+    "lead-queue": leadQueueLeads.length,
+    "hot-eye-leads": hotEyeLeads.length,
+    "ppe-opportunity": ppeOpportunityLeads.length,
+    "source-signals": visibleLeads.length,
     "saved-views": 4,
     settings: "",
   };
@@ -608,12 +1023,12 @@ export default function App() {
           backgroundColor: alpha("#f4efe7", 0.82),
         }}
       >
-        <Toolbar sx={{ gap: 2 }}>
+        <Toolbar sx={{ gap: { xs: 1, md: 1.5 }, minHeight: { xs: 64, sm: 72, md: 64 } }}>
           <IconButton onClick={() => setMobileOpen(true)} sx={{ display: { md: "none" } }}>
             <MenuRoundedIcon />
           </IconButton>
           <TextField
-            fullWidth
+            sx={{ flex: 1, minWidth: { xs: 140, sm: 260 } }}
             placeholder="Search company, code, incident type, source signal, or layman summary..."
             size="small"
             value={query}
@@ -626,24 +1041,88 @@ export default function App() {
               ),
             }}
           />
-          <Button
-            color="secondary"
-            disabled={triggeringPull || pullStatus?.status === "running"}
-            startIcon={
-              triggeringPull || pullStatus?.status === "running" ? (
-                <CircularProgress color="inherit" size={16} />
-              ) : (
-                <RefreshRoundedIcon />
-              )
-            }
-            variant="contained"
-            onClick={onTriggerPull}
+
+          <Stack
+            direction="row"
+            spacing={0.75}
+            sx={{
+              flexShrink: 0,
+              overflowX: { xs: "auto", md: "visible" },
+              maxWidth: { xs: "58vw", md: "none" },
+              scrollbarWidth: "none",
+              "&::-webkit-scrollbar": { display: "none" },
+              "& .toolbar-action": {
+                borderRadius: 2,
+                textTransform: "none",
+                whiteSpace: "nowrap",
+                height: { xs: 34, sm: 36 },
+                minWidth: { xs: 36, sm: 102 },
+                px: { xs: 1, sm: 1.5 },
+                fontSize: { xs: "0.75rem", sm: "0.8125rem" },
+                "& .MuiButton-startIcon": {
+                  marginLeft: 0,
+                  marginRight: { xs: 0, sm: 0.75 },
+                },
+                "& .btn-label": {
+                  display: { xs: "none", sm: "inline" },
+                },
+                "& .btn-label-short": {
+                  display: { xs: "inline", sm: "none" },
+                },
+              },
+            }}
           >
-            Refresh Leads
-          </Button>
-          <Button startIcon={<TuneRoundedIcon />} variant="contained" onClick={() => setActiveView("settings")}>
-            Settings
-          </Button>
+            <Button
+              className="toolbar-action"
+              color="secondary"
+              disabled={triggeringPull || triggeringFullPull || pullStatus?.status === "running"}
+              startIcon={
+                triggeringPull || pullStatus?.status === "running" ? (
+                  <CircularProgress color="inherit" size={16} />
+                ) : (
+                  <RefreshRoundedIcon />
+                )
+              }
+              variant="contained"
+              onClick={onTriggerPull}
+            >
+              <span className="btn-label">Quick Refresh</span>
+              <span className="btn-label-short">Quick</span>
+            </Button>
+            <Button
+              className="toolbar-action"
+              color="warning"
+              disabled={triggeringPull || triggeringFullPull || pullStatus?.status === "running"}
+              startIcon={
+                triggeringFullPull ? <CircularProgress color="inherit" size={16} /> : <AutoAwesomeRoundedIcon />
+              }
+              variant="outlined"
+              onClick={onTriggerFullPull}
+            >
+              <span className="btn-label">Full Pull</span>
+              <span className="btn-label-short">Full</span>
+            </Button>
+            <Button
+              className="toolbar-action"
+              color="info"
+              disabled={loadingLeads || reloadingBigQuery || pullStatus?.status === "running"}
+              startIcon={reloadingBigQuery ? <CircularProgress color="inherit" size={16} /> : <SourceRoundedIcon />}
+              variant="outlined"
+              onClick={onReloadBigQuery}
+            >
+              <span className="btn-label">Reload BigQuery</span>
+              <span className="btn-label-short">Reload</span>
+            </Button>
+            <Button
+              className="toolbar-action"
+              startIcon={<TuneRoundedIcon />}
+              variant="contained"
+              onClick={() => setActiveView("settings")}
+            >
+              <span className="btn-label">Settings</span>
+              <span className="btn-label-short">Settings</span>
+            </Button>
+          </Stack>
         </Toolbar>
       </AppBar>
 
@@ -684,7 +1163,11 @@ export default function App() {
           {leadLoadError ? <Alert severity="warning">Live load issue: {leadLoadError}. Showing fallback sample data.</Alert> : null}
           {loadingLeads ? <Alert severity="info">Loading live leads from BigQuery...</Alert> : null}
           {pullStatus?.status === "running" ? (
-            <Alert severity="info">Pipeline pull started at {formatPullTime(pullStatus.startedAt)}. This can take several minutes.</Alert>
+            <Alert severity="info">
+              {pullStatus.mode === "full"
+                ? `Full pipeline started at ${formatPullTime(pullStatus.startedAt)}. This is heavier and can take up to 15 minutes.`
+                : `Quick refresh started at ${formatPullTime(pullStatus.startedAt)}. This should complete in about 1-3 minutes.`}
+            </Alert>
           ) : null}
           {pullStatus?.status === "failed" ? (
             <Alert severity="error">
@@ -701,8 +1184,8 @@ export default function App() {
             <Typography variant="h3">
               {activeView === "overview" && "Lead Overview"}
               {activeView === "lead-queue" && "Lead Queue"}
-              {activeView === "hot-accounts" && "Hot Accounts"}
-              {activeView === "research-needed" && "Research Needed"}
+              {activeView === "hot-eye-leads" && "Hot Eye Leads"}
+              {activeView === "ppe-opportunity" && "PPE Opportunity"}
               {activeView === "source-signals" && "Source Signals"}
               {activeView === "saved-views" && "Saved Views"}
               {activeView === "settings" && "Settings"}
@@ -718,18 +1201,74 @@ export default function App() {
 
           <Card>
             <CardContent>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                justifyContent="space-between"
+                alignItems={{ xs: "flex-start", sm: "center" }}
+                spacing={1}
+                sx={{ mb: 1.5 }}
+              >
+                <Stack spacing={0.4}>
+                  <Typography variant="body2" color="text.secondary">
+                    Showing {visibleLeads.length} of {leadData.length} leads
+                    {settings.showOnlyContactReady ? " (contact-ready only)" : ""}
+                  </Typography>
+                  {totalAvailableLeads != null ? (
+                    <Typography variant="caption" color="text.secondary">
+                      Total available in BigQuery: {totalAvailableLeads}
+                    </Typography>
+                  ) : null}
+                  <Typography variant="caption" color="text.secondary">
+                    Contact-ready loaded: {contactReadyLoadedCount}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" spacing={0.75}>
+                  <Button
+                    size="small"
+                    variant={settings.showOnlyContactReady ? "contained" : "outlined"}
+                    onClick={() =>
+                      setSettings((current) => ({
+                        ...current,
+                        showOnlyContactReady: !current.showOnlyContactReady,
+                      }))
+                    }
+                  >
+                    {settings.showOnlyContactReady ? "Show All Loaded" : "Show Contact-Ready"}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="text"
+                    disabled={!hasActiveFilters}
+                    onClick={clearAllFilters}
+                  >
+                    Clear Filters
+                  </Button>
+                </Stack>
+              </Stack>
               <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 3 }}>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Region</InputLabel>
                     <Select label="Region" value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)}>
                       <MenuItem value="All">All regions</MenuItem>
-                      <MenuItem value="San Diego">San Diego</MenuItem>
-                      <MenuItem value="Bay Area">Bay Area</MenuItem>
+                      {regionOptions.map((region) => (
+                        <MenuItem key={region} value={region}>{region}</MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>County</InputLabel>
+                    <Select label="County" value={countyFilter} onChange={(event) => setCountyFilter(event.target.value)}>
+                      <MenuItem value="All">All counties</MenuItem>
+                      {countyOptions.map((county) => (
+                        <MenuItem key={county} value={county}>{county} County</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Priority</InputLabel>
                     <Select
@@ -738,26 +1277,25 @@ export default function App() {
                       onChange={(event) => setPriorityFilter(event.target.value)}
                     >
                       <MenuItem value="All">All priorities</MenuItem>
-                      <MenuItem value="P0 Ideal">P0 Ideal</MenuItem>
-                      <MenuItem value="P1 Active">P1 Active</MenuItem>
-                      <MenuItem value="P2 Research">P2 Research</MenuItem>
-                      <MenuItem value="P3 Monitor">P3 Monitor</MenuItem>
+                      <MenuItem value="P0 Hot Eye">P0 Hot Eye</MenuItem>
+                      <MenuItem value="P1 Eye Violation">P1 Eye Violation</MenuItem>
+                      <MenuItem value="P2 PPE Opportunity">P2 PPE Opportunity</MenuItem>
+                      <MenuItem value="P3 Industry Fit">P3 Industry Fit</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Source</InputLabel>
                     <Select label="Source" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
                       <MenuItem value="All">All sources</MenuItem>
-                      <MenuItem value="OSHA">OSHA</MenuItem>
-                      <MenuItem value="FDA">FDA</MenuItem>
-                      <MenuItem value="EPA">EPA</MenuItem>
-                      <MenuItem value="NIH">NIH</MenuItem>
+                      {sourceOptions.map((source) => (
+                        <MenuItem key={source} value={source}>{source}</MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Incident Type</InputLabel>
                     <Select
@@ -783,41 +1321,45 @@ export default function App() {
               <Grid container spacing={2.5}>
                 <Grid size={{ xs: 12, md: 3 }}>
                   <StatCard
-                    label="Contact Ready"
-                    value={`${visibleLeads.length}`}
-                    supporting="Leads remaining after your active filters."
+                    label="Hot Eye Leads"
+                    value={`${hotEyeLeads.length}`}
+                    supporting="P0 + P1: direct eye injury evidence or eye citation."
                   />
                 </Grid>
                 <Grid size={{ xs: 12, md: 3 }}>
                   <StatCard
-                    label="Call Now"
-                    value={`${hotAccounts.length}`}
-                    supporting="Accounts with the strongest urgency and evidence."
+                    label="Eye Injury Companies"
+                    value={`${visibleLeads.filter((l) => l.eyeInjuryCount > 0).length}`}
+                    supporting="Companies with OSHA-recorded eye injuries in the past year."
                   />
                 </Grid>
                 <Grid size={{ xs: 12, md: 3 }}>
                   <StatCard
-                    label="Open Violations"
-                    value={`${visibleLeads.filter((lead) => lead.openViolations).length}`}
-                    supporting="Accounts still carrying active OSHA pressure."
+                    label="Prescription Citations"
+                    value={`${visibleLeads.filter((l) => l.prescriptionViolationCount > 0).length}`}
+                    supporting="Cited for prescription lens protection failure."
                   />
                 </Grid>
                 <Grid size={{ xs: 12, md: 3 }}>
                   <StatCard
-                    label="Multi-source Matches"
-                    value={`${visibleLeads.filter((lead) => lead.matchedSources.length > 1).length}`}
-                    supporting="Leads reinforced by more than one data source."
+                    label="Open Eye Violations"
+                    value={`${visibleLeads.filter((l) => l.openEyeViolationCount > 0).length}`}
+                    supporting="Eye protection violations still unabated today."
                   />
                 </Grid>
                 <Grid size={{ xs: 12, md: 3 }}>
                   <StatCard
-                    label="Recent Incidents"
+                    label="PPE Opportunity"
+                    value={`${ppeOpportunityLeads.length}`}
+                    supporting="P2: general PPE leads — prescription eyewear upsell."
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 3 }}>
+                  <StatCard
+                    label="Recent Eye Incidents"
                     value={`${recentIncidents.length}`}
-                    supporting="Leads with incident dates inside the last 30 days."
+                    supporting="Eye injury / violation dates in the last 30 days."
                   />
-                </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
-                  <StatCard label="Attempted" value={`${attemptedCount}`} supporting="Outreach attempts logged." />
                 </Grid>
                 <Grid size={{ xs: 12, md: 3 }}>
                   <StatCard label="Connected" value={`${connectedCount}`} supporting="Conversations established." />
@@ -831,14 +1373,19 @@ export default function App() {
                 <Grid size={{ xs: 12, lg: 7 }}>
                   <Card>
                     <CardContent>
-                      <Typography variant="h6">Best Next Calls</Typography>
+                      <Typography variant="h6">Best Next Calls (Hot Eye Leads)</Typography>
                       <Stack spacing={2} sx={{ mt: 2 }}>
-                        {hotAccounts.slice(0, 4).map((lead) => (
+                        {hotEyeLeads.slice(0, 4).map((lead) => (
                           <Box key={lead.id}>
-                            <LeadCard lead={lead} compact={settings.compactCards} />
-                            <OutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                            <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                            <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
                           </Box>
                         ))}
+                        {hotEyeLeads.length === 0 ? (
+                          <Typography color="text.secondary" variant="body2">
+                            No hot eye leads yet — run Quick Refresh after the next data pull.
+                          </Typography>
+                        ) : null}
                       </Stack>
                     </CardContent>
                   </Card>
@@ -846,25 +1393,19 @@ export default function App() {
                 <Grid size={{ xs: 12, lg: 5 }}>
                   <Card sx={{ height: "100%" }}>
                     <CardContent>
-                      <Typography variant="h6">What belongs in the navigation</Typography>
+                      <Typography variant="h6">Lead tier guide</Typography>
                       <Stack spacing={1.5} sx={{ mt: 2 }}>
                         <Typography variant="body2">
-                          `Lead Queue` for the full working list with search, code, incident, and source filters.
+                          <strong>🔴 P0 Hot Eye</strong> — Direct eye injury on OSHA record. Prescription safety eyewear is urgent. Call first.
                         </Typography>
                         <Typography variant="body2">
-                          `Hot Accounts` for immediate outreach so the top of funnel stays visible all day.
+                          <strong>🟠 P1 Eye Violation</strong> — Cited for eye/face protection failure. Compliance upgrade or prescription program opportunity. Call this week.
                         </Typography>
                         <Typography variant="body2">
-                          `Research Needed` for accounts worth keeping warm while owner mapping or enrichment catches up.
+                          <strong>🟡 P2 PPE Opportunity</strong> — General PPE violations in high-hazard industry. Prescription eyewear is a natural add. Warm outreach.
                         </Typography>
                         <Typography variant="body2">
-                          `Source Signals` so you can inspect which OSHA code or supporting source is driving the lead.
-                        </Typography>
-                        <Typography variant="body2">
-                          `Saved Views` for team presets like severe injuries, prescription safety, or Bay Area P1s.
-                        </Typography>
-                        <Typography variant="body2">
-                          `Settings` for compact mode, default filters, and what "contact ready" should include.
+                          <strong>⚪ P3 Industry Fit</strong> — Profile/industry match only. No OSHA enforcement evidence yet. Nurture or discard.
                         </Typography>
                       </Stack>
                     </CardContent>
@@ -876,34 +1417,87 @@ export default function App() {
 
           {activeView === "lead-queue" ? (
             <Grid container spacing={2.5}>
-              {visibleLeads.map((lead) => (
-                <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
-                  <LeadCard lead={lead} compact={settings.compactCards} />
-                  <OutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+              <Grid size={{ xs: 12 }}>
+                <Alert severity="info">
+                  Lead Queue prioritizes contact-ready accounts first, then adds a smaller P3 monitor watchlist for prospecting depth.
+                </Alert>
+              </Grid>
+              {leadQueueVisibleRows.map((lead) => (
+                <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
+                  <Stack spacing={1.25} sx={{ width: "100%" }}>
+                    <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                    <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                  </Stack>
                 </Grid>
               ))}
+              {leadQueueLeads.length > leadQueueVisibleRows.length ? (
+                <Grid size={{ xs: 12 }}>
+                  <Stack direction="row" justifyContent="center" spacing={1}>
+                    <Button variant="outlined" onClick={() => loadMoreForView("lead-queue")}>
+                      Load More ({leadQueueVisibleRows.length} of {leadQueueLeads.length})
+                    </Button>
+                  </Stack>
+                </Grid>
+              ) : null}
+              {leadQueueLeads.length === 0 ? (
+                <Grid size={{ xs: 12 }}>
+                  <Typography color="text.secondary">No queued leads match your current filters. Click Clear Filters to widen the queue.</Typography>
+                </Grid>
+              ) : null}
             </Grid>
           ) : null}
 
-          {activeView === "hot-accounts" ? (
+          {activeView === "hot-eye-leads" ? (
             <Grid container spacing={2.5}>
-              {hotAccounts.map((lead) => (
-                <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
-                  <LeadCard lead={lead} compact={settings.compactCards} />
-                  <OutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+              {hotEyeVisibleRows.map((lead) => (
+                <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
+                  <Stack spacing={1.25} sx={{ width: "100%" }}>
+                    <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                    <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                  </Stack>
                 </Grid>
               ))}
+              {hotEyeLeads.length > hotEyeVisibleRows.length ? (
+                <Grid size={{ xs: 12 }}>
+                  <Stack direction="row" justifyContent="center" spacing={1}>
+                    <Button variant="outlined" onClick={() => loadMoreForView("hot-eye-leads")}>
+                      Load More ({hotEyeVisibleRows.length} of {hotEyeLeads.length})
+                    </Button>
+                  </Stack>
+                </Grid>
+              ) : null}
+              {hotEyeLeads.length === 0 ? (
+                <Grid size={{ xs: 12 }}>
+                  <Typography color="text.secondary">No hot eye leads match your current filters.</Typography>
+                </Grid>
+              ) : null}
             </Grid>
           ) : null}
 
-          {activeView === "research-needed" ? (
+          {activeView === "ppe-opportunity" ? (
             <Grid container spacing={2.5}>
-              {researchNeeded.map((lead) => (
-                <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
-                  <LeadCard lead={lead} compact={settings.compactCards} />
-                  <OutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+              {ppeVisibleRows.map((lead) => (
+                <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
+                  <Stack spacing={1.25} sx={{ width: "100%" }}>
+                    <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                    <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+                  </Stack>
                 </Grid>
               ))}
+              {ppeOpportunityLeads.length > ppeVisibleRows.length ? (
+                <Grid size={{ xs: 12 }}>
+                  <Stack direction="row" justifyContent="center" spacing={1}>
+                    <Button variant="outlined" onClick={() => loadMoreForView("ppe-opportunity")}>
+                      Load More ({ppeVisibleRows.length} of {ppeOpportunityLeads.length})
+                    </Button>
+                  </Stack>
+                </Grid>
+              ) : null}
+              {ppeOpportunityLeads.length === 0 ? (
+                <Grid size={{ xs: 12 }}>
+                  <Typography color="text.secondary">No PPE opportunity leads match your current filters.</Typography>
+                </Grid>
+              ) : null}
             </Grid>
           ) : null}
 

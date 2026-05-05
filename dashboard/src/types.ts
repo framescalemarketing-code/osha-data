@@ -1,15 +1,18 @@
 export type NavView =
   | "overview"
   | "lead-queue"
-  | "hot-accounts"
-  | "research-needed"
+  | "hot-eye-leads"
+  | "ppe-opportunity"
   | "source-signals"
   | "saved-views"
   | "settings";
 
+export type LeadTier = "P0 Hot Eye" | "P1 Eye Violation" | "P2 PPE Opportunity" | "P3 Industry Fit";
+
+/** Legacy compat alias — maps from LeadTier */
 export type LeadPriority = "P0 Ideal" | "P1 Active" | "P2 Research" | "P3 Monitor";
 export type NeedTier = "Direct Need" | "Probable Need" | "Fit Only";
-export type ActionLabel = "Call Now" | "Call This Week" | "Research Then Call" | "Monitor / Nurture";
+export type ActionLabel = "Ideal Call Now" | "Call Now" | "Call This Week" | "Research Then Call" | "Monitor / Nurture";
 export type IncidentType =
   | "Severe Injury"
   | "Complaint Inspection"
@@ -18,6 +21,13 @@ export type IncidentType =
   | "Fit And Training Gap"
   | "Impact Hazard"
   | "General PPE";
+
+export type IncidentDateSource =
+  | "accident"
+  | "violation-event"
+  | "case-close"
+  | "case-open"
+  | "unknown";
 
 export type OshaViolationDetail = {
   code: string;
@@ -29,25 +39,71 @@ export type OshaViolationDetail = {
 export type LeadRecord = {
   id: string;
   company: string;
-  region: "San Diego" | "Bay Area";
+  region: string;
+  county?: string;
+  distanceFromMiramarMiles?: number | null;
   city: string;
   industry: string;
   ownerType: string;
+
+  // v3 scores
+  eyeLeadScore: number;
+  ppeScore: number;
+  finalScore: number;
+  leadTier: LeadTier;
+  pitchRecommendation: string;
+
+  // legacy compat (derived from leadTier in server)
   overallSalesScore: number;
   eyewearEvidenceScore: number;
   priority: LeadPriority;
   needTier: NeedTier;
   action: ActionLabel;
+
+  // eye injury evidence
+  eyeInjuryCount: number;
+  fatalityCount: number;
+  faceHeadInjuryCount: number;
+  eyeInjuryDescriptions: string[];
+
+  // violation evidence
+  eyeViolationCount: number;
+  prescriptionViolationCount: number;
+  openEyeViolationCount: number;
+  generalPpeViolationCount: number;
+  openGeneralPpeViolationCount: number;
+  willfulViolationCount: number;
+  repeatViolationCount: number;
+  totalCurrentPenalty: number;
+  rawViolationCodes: string[];
+  openViolations: boolean;
+
+  // enrichment signals
+  violationEventCount: number;
+  contestedViolationCount: number;
+  eyeEmphasisCount: number;
+  emphasisCodes: string[];
+  relatedInspectionCount: number;
+  formalFollowupCount: number;
+  totalInspectionCount: number;
+
+  // company info
+  employeeBand: string;
+
+  // dates
+  incidentDate: string;
+  incidentDateSource?: IncidentDateSource;
+  incidentType: IncidentType;
+  openCaseDate?: string;
+  closeCaseDate?: string;
+  lastEyeInjuryDate?: string;
+
+  // legacy compat
   matchedSources: string[];
   reasonToContact: string;
   whyNow: string;
   recentInspectionContext: string;
-  incidentDate: string;
-  incidentType: IncidentType;
-  rawViolationCodes: string[];
-  openViolations: boolean;
   severeIncident: boolean;
-  employeeBand: string;
   lastTouchedDays: number;
   accountStatus: "New" | "In Review" | "Contacted";
   outreachStatus?: "new" | "attempted" | "connected" | "won" | "lost";

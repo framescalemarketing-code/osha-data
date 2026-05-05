@@ -1,4 +1,92 @@
-import type { LeadRecord } from "./types";
+import type { LeadRecord, LeadTier } from "./types";
+
+// Fallback sample leads shown when BigQuery is unavailable.
+// v3 fields are synthesized from the legacy priority/score values.
+function makeV3Defaults(
+  overallSalesScore: number,
+  priority: LeadRecord["priority"],
+  rawViolationCodes: string[],
+): Pick<
+  LeadRecord,
+  | "eyeLeadScore"
+  | "ppeScore"
+  | "finalScore"
+  | "leadTier"
+  | "pitchRecommendation"
+  | "eyeInjuryCount"
+  | "fatalityCount"
+  | "faceHeadInjuryCount"
+  | "eyeInjuryDescriptions"
+  | "eyeViolationCount"
+  | "prescriptionViolationCount"
+  | "openEyeViolationCount"
+  | "generalPpeViolationCount"
+  | "openGeneralPpeViolationCount"
+  | "willfulViolationCount"
+  | "repeatViolationCount"
+  | "totalCurrentPenalty"
+  | "violationEventCount"
+  | "contestedViolationCount"
+  | "eyeEmphasisCount"
+  | "emphasisCodes"
+  | "relatedInspectionCount"
+  | "formalFollowupCount"
+  | "totalInspectionCount"
+> {
+  const hasEye = rawViolationCodes.some(
+    (c) => c.startsWith("1910.133") || c.startsWith("1926.102"),
+  );
+  const hasPrescription = rawViolationCodes.some((c) => c.includes("(a)(3)"));
+  const hasGeneralPpe = rawViolationCodes.some(
+    (c) => c.startsWith("1910.132") || c.startsWith("1926.95"),
+  );
+  const eyeLeadScore =
+    priority === "P0 Ideal" ? 70 : priority === "P1 Active" ? 35 : 10;
+  const ppeScore = hasGeneralPpe ? 30 : 15;
+  const tierMap: Record<LeadRecord["priority"], LeadTier> = {
+    "P0 Ideal": "P0 Hot Eye",
+    "P1 Active": "P1 Eye Violation",
+    "P2 Research": "P2 PPE Opportunity",
+    "P3 Monitor": "P3 Industry Fit",
+  };
+  const pitchMap: Record<LeadTier, string> = {
+    "P0 Hot Eye":
+      "Direct eye injury on record - prescription safety eyewear program is urgent.",
+    "P1 Eye Violation":
+      "Cited for eye/face protection failure - program compliance or prescription upgrade.",
+    "P2 PPE Opportunity":
+      "General PPE violations - prescription safety eyewear program opportunity.",
+    "P3 Industry Fit":
+      "High-hazard industry profile - proactive prescription eyewear outreach.",
+  };
+  const tier = tierMap[priority];
+  return {
+    eyeLeadScore,
+    ppeScore,
+    finalScore: eyeLeadScore * 2 + ppeScore,
+    leadTier: tier,
+    pitchRecommendation: pitchMap[tier],
+    eyeInjuryCount: priority === "P0 Ideal" ? 1 : 0,
+    fatalityCount: 0,
+    faceHeadInjuryCount: 0,
+    eyeInjuryDescriptions: [],
+    eyeViolationCount: hasEye ? 1 : 0,
+    prescriptionViolationCount: hasPrescription ? 1 : 0,
+    openEyeViolationCount: 0,
+    generalPpeViolationCount: hasGeneralPpe ? 1 : 0,
+    openGeneralPpeViolationCount: 0,
+    willfulViolationCount: 0,
+    repeatViolationCount: 0,
+    totalCurrentPenalty: overallSalesScore * 100,
+    violationEventCount: 1,
+    contestedViolationCount: 0,
+    eyeEmphasisCount: 0,
+    emphasisCodes: [],
+    relatedInspectionCount: 0,
+    formalFollowupCount: 0,
+    totalInspectionCount: 1,
+  };
+}
 
 export const leads: LeadRecord[] = [
   {
@@ -14,7 +102,8 @@ export const leads: LeadRecord[] = [
     needTier: "Direct Need",
     action: "Call Now",
     matchedSources: ["OSHA", "FDA"],
-    reasonToContact: "Direct prescription citation, open violations, and FDA production footprint.",
+    reasonToContact:
+      "Direct prescription citation, open violations, and FDA production footprint.",
     whyNow: "Inspection is fresh and the eyewear signal is explicit.",
     recentInspectionContext: "Prescription safety citation with unresolved violations.",
     incidentDate: "2026-04-24",
@@ -25,6 +114,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "250-499",
     lastTouchedDays: 1,
     accountStatus: "New",
+    ...makeV3Defaults(91, "P0 Ideal", ["1910.133(a)(3)", "1910.132(d)(1)"]),
   },
   {
     id: "lead-002",
@@ -50,6 +140,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "100-249",
     lastTouchedDays: 4,
     accountStatus: "In Review",
+    ...makeV3Defaults(83, "P1 Active", ["1910.133", "1910.132"]),
   },
   {
     id: "lead-003",
@@ -64,9 +155,11 @@ export const leads: LeadRecord[] = [
     needTier: "Direct Need",
     action: "Call This Week",
     matchedSources: ["OSHA", "NIH"],
-    reasonToContact: "Research setting with microscope-heavy work and direct eye-face signals.",
+    reasonToContact:
+      "Research setting with microscope-heavy work and direct eye-face signals.",
     whyNow: "Award activity and inspection signals line up cleanly.",
-    recentInspectionContext: "Eye and face citation with active funded research profile.",
+    recentInspectionContext:
+      "Eye and face citation with active funded research profile.",
     incidentDate: "2026-04-15",
     incidentType: "General PPE",
     rawViolationCodes: ["1910.133", "1910.132(f)"],
@@ -75,6 +168,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "50-99",
     lastTouchedDays: 6,
     accountStatus: "New",
+    ...makeV3Defaults(78, "P1 Active", ["1910.133", "1910.132(f)"]),
   },
   {
     id: "lead-004",
@@ -89,9 +183,11 @@ export const leads: LeadRecord[] = [
     needTier: "Probable Need",
     action: "Research Then Call",
     matchedSources: ["OSHA", "EPA"],
-    reasonToContact: "Field crews, severe incident history, and active compliance pressure.",
+    reasonToContact:
+      "Field crews, severe incident history, and active compliance pressure.",
     whyNow: "Good fit, but needs owner mapping before outreach.",
-    recentInspectionContext: "Severe incident signal in a multi-site field environment.",
+    recentInspectionContext:
+      "Severe incident signal in a multi-site field environment.",
     incidentDate: "2026-04-10",
     incidentType: "Severe Injury",
     rawViolationCodes: ["1926.95", "1926.102"],
@@ -100,6 +196,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "500+",
     lastTouchedDays: 11,
     accountStatus: "In Review",
+    ...makeV3Defaults(72, "P1 Active", ["1926.95", "1926.102"]),
   },
   {
     id: "lead-005",
@@ -114,7 +211,8 @@ export const leads: LeadRecord[] = [
     needTier: "Probable Need",
     action: "Research Then Call",
     matchedSources: ["OSHA", "FDA"],
-    reasonToContact: "Cleanroom and assembly work suggest recurring protective eyewear demand.",
+    reasonToContact:
+      "Cleanroom and assembly work suggest recurring protective eyewear demand.",
     whyNow: "Good commercial fit but less urgency than the hot queue.",
     recentInspectionContext: "Fit-selection citation and quality-control workflow.",
     incidentDate: "2026-04-05",
@@ -125,6 +223,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "100-249",
     lastTouchedDays: 8,
     accountStatus: "In Review",
+    ...makeV3Defaults(68, "P2 Research", ["1926.95(c)(2)", "1910.132(f)"]),
   },
   {
     id: "lead-006",
@@ -150,6 +249,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "250-499",
     lastTouchedDays: 14,
     accountStatus: "New",
+    ...makeV3Defaults(64, "P2 Research", ["1910.133(a)(2)", "1910.132"]),
   },
   {
     id: "lead-007",
@@ -164,7 +264,8 @@ export const leads: LeadRecord[] = [
     needTier: "Fit Only",
     action: "Monitor / Nurture",
     matchedSources: ["NIH"],
-    reasonToContact: "Decent fit through clinical work, but not a strong urgency signal.",
+    reasonToContact:
+      "Decent fit through clinical work, but not a strong urgency signal.",
     whyNow: "Better as nurture unless new OSHA evidence appears.",
     recentInspectionContext: "No direct inspection signal in current pull.",
     incidentDate: "2026-03-21",
@@ -175,6 +276,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "20-49",
     lastTouchedDays: 21,
     accountStatus: "Contacted",
+    ...makeV3Defaults(59, "P2 Research", ["1910.132"]),
   },
   {
     id: "lead-008",
@@ -189,7 +291,8 @@ export const leads: LeadRecord[] = [
     needTier: "Direct Need",
     action: "Call Now",
     matchedSources: ["OSHA", "EPA"],
-    reasonToContact: "Chemical splash, severe injury history, and open compliance items.",
+    reasonToContact:
+      "Chemical splash, severe injury history, and open compliance items.",
     whyNow: "High consequence environment with immediate program gap.",
     recentInspectionContext: "Severe eye-face history and environmental pressure.",
     incidentDate: "2026-04-27",
@@ -200,6 +303,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "100-249",
     lastTouchedDays: 2,
     accountStatus: "New",
+    ...makeV3Defaults(88, "P0 Ideal", ["1910.133", "1910.132(d)(1)"]),
   },
   {
     id: "lead-009",
@@ -214,7 +318,8 @@ export const leads: LeadRecord[] = [
     needTier: "Probable Need",
     action: "Call This Week",
     matchedSources: ["OSHA"],
-    reasonToContact: "Bright light exposure and field crew density support eyewear outreach.",
+    reasonToContact:
+      "Bright light exposure and field crew density support eyewear outreach.",
     whyNow: "Good urgency if we pitch glare, fit, and durability together.",
     recentInspectionContext: "Outdoor field work with UV-related signal.",
     incidentDate: "2026-04-16",
@@ -225,6 +330,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "100-249",
     lastTouchedDays: 5,
     accountStatus: "New",
+    ...makeV3Defaults(67, "P1 Active", ["1926.102", "1926.95(c)(2)"]),
   },
   {
     id: "lead-010",
@@ -239,7 +345,8 @@ export const leads: LeadRecord[] = [
     needTier: "Probable Need",
     action: "Call This Week",
     matchedSources: ["OSHA", "FDA"],
-    reasonToContact: "Device packaging workflow and multi-source match suggest strong fit.",
+    reasonToContact:
+      "Device packaging workflow and multi-source match suggest strong fit.",
     whyNow: "The fit is strong enough to move before a competitor does.",
     recentInspectionContext: "PPE signal supported by FDA footprint.",
     incidentDate: "2026-04-20",
@@ -250,6 +357,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "50-99",
     lastTouchedDays: 3,
     accountStatus: "In Review",
+    ...makeV3Defaults(74, "P1 Active", ["1910.132(f)", "1910.133(a)(2)"]),
   },
   {
     id: "lead-011",
@@ -264,7 +372,8 @@ export const leads: LeadRecord[] = [
     needTier: "Probable Need",
     action: "Research Then Call",
     matchedSources: ["FDA", "NIH"],
-    reasonToContact: "Visual task density plus research funding make it a quality fit.",
+    reasonToContact:
+      "Visual task density plus research funding make it a quality fit.",
     whyNow: "Best next move is identifying the EHS or operations owner.",
     recentInspectionContext: "No severe signal, but strong instrumentation fit.",
     incidentDate: "2026-04-07",
@@ -275,6 +384,7 @@ export const leads: LeadRecord[] = [
     employeeBand: "50-99",
     lastTouchedDays: 10,
     accountStatus: "New",
+    ...makeV3Defaults(70, "P1 Active", ["1910.132"]),
   },
   {
     id: "lead-012",
@@ -289,9 +399,11 @@ export const leads: LeadRecord[] = [
     needTier: "Fit Only",
     action: "Monitor / Nurture",
     matchedSources: ["OSHA"],
-    reasonToContact: "There is some hazard fit, but procurement friction lowers urgency.",
+    reasonToContact:
+      "There is some hazard fit, but procurement friction lowers urgency.",
     whyNow: "Keep visible for quarterly review rather than immediate outreach.",
-    recentInspectionContext: "General PPE activity without direct prescription evidence.",
+    recentInspectionContext:
+      "General PPE activity without direct prescription evidence.",
     incidentDate: "2026-03-28",
     incidentType: "General PPE",
     rawViolationCodes: ["1926.95"],
@@ -300,5 +412,6 @@ export const leads: LeadRecord[] = [
     employeeBand: "250-499",
     lastTouchedDays: 18,
     accountStatus: "Contacted",
+    ...makeV3Defaults(57, "P3 Monitor", ["1926.95"]),
   },
 ];
