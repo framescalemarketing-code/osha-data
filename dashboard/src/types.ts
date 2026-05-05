@@ -4,7 +4,6 @@ export type NavView =
   | "hot-eye-leads"
   | "ppe-opportunity"
   | "source-signals"
-  | "saved-views"
   | "settings";
 
 export type LeadTier = "P0 Hot Eye" | "P1 Eye Violation" | "P2 PPE Opportunity" | "P3 Industry Fit";

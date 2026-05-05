@@ -42,9 +42,10 @@ import {
 import AssessmentRoundedIcon from "@mui/icons-material/AssessmentRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import FilterAltRoundedIcon from "@mui/icons-material/FilterAltRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
-import FolderSpecialRoundedIcon from "@mui/icons-material/FolderSpecialRounded";
 import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartmentRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
@@ -57,7 +58,8 @@ import { leads as fallbackLeads } from "./data";
 import { toViolationDetails } from "./oshaStandards";
 import type { DashboardSettings, IncidentDateSource, IncidentType, LeadRecord, LeadTier, NavView } from "./types";
 
-const drawerWidth = 300;
+const drawerWidthExpanded = 300;
+const drawerWidthCollapsed = 88;
 
 const initialSettings: DashboardSettings = {
   compactCards: false,
@@ -90,7 +92,6 @@ const navItems: Array<{ view: NavView; label: string; icon: React.ReactNode }> =
   { view: "hot-eye-leads", label: "Hot Eye Leads", icon: <LocalFireDepartmentRoundedIcon /> },
   { view: "ppe-opportunity", label: "PPE Opportunity", icon: <FlagRoundedIcon /> },
   { view: "source-signals", label: "Source Signals", icon: <SourceRoundedIcon /> },
-  { view: "saved-views", label: "Saved Views", icon: <FolderSpecialRoundedIcon /> },
   { view: "settings", label: "Settings", icon: <SettingsRoundedIcon /> },
 ];
 
@@ -987,6 +988,8 @@ function isTrueIncidentSource(source?: IncidentDateSource) {
 
 export default function App() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [desktopNavCollapsed, setDesktopNavCollapsed] = React.useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
   const [activeView, setActiveView] = React.useState<NavView>("overview");
   const [query, setQuery] = React.useState("");
   const [regionFilter, setRegionFilter] = React.useState("All");
@@ -1013,6 +1016,7 @@ export default function App() {
     "hot-eye-leads": 0,
     "ppe-opportunity": 0,
   });
+  const desktopDrawerWidth = desktopNavCollapsed ? drawerWidthCollapsed : drawerWidthExpanded;
 
   // Bad lead state — persisted to localStorage, filtered out of all views
   const [badLeads, setBadLeads] = React.useState<BadLeadEntry[]>(() => loadBadLeads());
@@ -1500,7 +1504,6 @@ export default function App() {
     "hot-eye-leads": hotEyeLeads.length,
     "ppe-opportunity": ppeOpportunityLeads.length,
     "source-signals": visibleLeads.length,
-    "saved-views": 4,
     settings: badLeads.length + naicsRules.length > 0 ? badLeads.length + naicsRules.length : "",
   };
 
@@ -1510,23 +1513,62 @@ export default function App() {
   const wonCount = visibleLeads.filter((lead) => lead.outreachStatus === "won").length;
   const lostCount = visibleLeads.filter((lead) => lead.outreachStatus === "lost").length;
 
-  const drawer = (
+  const renderLeadWorkflowCard = (lead: LeadRecord) => {
+    const accountEntry = namedAccounts[normalizeCompanyKey(lead.company)];
+    return (
+      <Box
+        sx={{
+          width: "100%",
+          borderRadius: 3,
+          border: "1px solid rgba(15, 23, 42, 0.1)",
+          p: 1.25,
+          bgcolor: alpha("#ffffff", 0.74),
+          backdropFilter: "blur(4px)",
+        }}
+      >
+        <MemoLeadCard lead={lead} compact={settings.compactCards} />
+        {accountEntry ? (
+          <Box sx={{ mt: 0.9 }}>
+            <AccountStatusBadge status={accountEntry.status} label={ACCOUNT_STATUS_LABELS[accountEntry.status]} />
+          </Box>
+        ) : null}
+        <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          startIcon={<BlockRoundedIcon />}
+          onClick={() => {
+            setBadLeadReason("wrong_industry");
+            setBadLeadDialogLead(lead);
+          }}
+          sx={{ mt: 1, alignSelf: "flex-start", opacity: 0.78, "&:hover": { opacity: 1 } }}
+        >
+          Not a Fit
+        </Button>
+      </Box>
+    );
+  };
+
+  const renderDrawer = (collapsed: boolean) => (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <Box sx={{ px: 3, pt: 3, pb: 2 }}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <Avatar sx={{ bgcolor: "#c96f31", color: "#fff" }}>
+      <Box sx={{ px: collapsed ? 1.5 : 3, pt: 3, pb: 2 }}>
+        <Stack direction="row" spacing={1.5} alignItems="center" justifyContent={collapsed ? "center" : "flex-start"}>
+          <Avatar sx={{ bgcolor: "#c7773f", color: "#fff" }}>
             <AutoAwesomeRoundedIcon />
           </Avatar>
-          <Box>
-            <Typography variant="h6">Lead Signal Desk</Typography>
-            <Typography sx={{ opacity: 0.78 }} variant="body2">
-              Daily sales pipeline navigator
-            </Typography>
-          </Box>
+          {!collapsed ? (
+            <Box>
+              <Typography variant="h6">Lead Signal Desk</Typography>
+              <Typography sx={{ opacity: 0.78 }} variant="body2">
+                Daily sales pipeline navigator
+              </Typography>
+            </Box>
+          ) : null}
         </Stack>
       </Box>
       <Divider sx={{ borderColor: "rgba(255,255,255,0.08)" }} />
-      <List sx={{ px: 1.5, py: 2 }}>
+      <List sx={{ px: collapsed ? 1 : 1.5, py: 2 }}>
         {navItems.map((item) => (
           <ListItemButton
             key={item.view}
@@ -1539,38 +1581,42 @@ export default function App() {
               borderRadius: 3,
               mb: 0.5,
               color: "#f7f2e8",
+              justifyContent: collapsed ? "center" : "flex-start",
+              px: collapsed ? 1 : 1.5,
               "&.Mui-selected": {
                 backgroundColor: "rgba(255,255,255,0.14)",
               },
             }}
           >
-            <ListItemIcon sx={{ color: "inherit", minWidth: 40 }}>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.label} />
-            {navCounts[item.view] !== "" ? <span className="nav-pill">{navCounts[item.view]}</span> : null}
+            <ListItemIcon sx={{ color: "inherit", minWidth: collapsed ? 0 : 40 }}>{item.icon}</ListItemIcon>
+            {!collapsed ? <ListItemText primary={item.label} /> : null}
+            {!collapsed && navCounts[item.view] !== "" ? <span className="nav-pill">{navCounts[item.view]}</span> : null}
           </ListItemButton>
         ))}
       </List>
 
-      <Box sx={{ mt: "auto", p: 2 }}>
-        <Card
-          sx={{
-            bgcolor: alpha("#ffffff", 0.08),
-            color: "#fff9f1",
-            border: "1px solid rgba(255,255,255,0.08)",
-            boxShadow: "none",
-          }}
-        >
-          <CardContent>
-            <Typography variant="overline">Today's focus</Typography>
-            <Typography sx={{ mt: 1 }} variant="h6">
-              {hotAccounts.length} accounts are ready for immediate contact
-            </Typography>
-            <Typography sx={{ mt: 1, opacity: 0.8 }} variant="body2">
-              Pull status: {pullStatus?.status || "idle"}.
-            </Typography>
-          </CardContent>
-        </Card>
-      </Box>
+      {!collapsed ? (
+        <Box sx={{ mt: "auto", p: 2 }}>
+          <Card
+            sx={{
+              bgcolor: alpha("#ffffff", 0.08),
+              color: "#fff9f1",
+              border: "1px solid rgba(255,255,255,0.08)",
+              boxShadow: "none",
+            }}
+          >
+            <CardContent>
+              <Typography variant="overline">Today's focus</Typography>
+              <Typography sx={{ mt: 1 }} variant="h6">
+                {hotAccounts.length} accounts are ready for immediate contact
+              </Typography>
+              <Typography sx={{ mt: 1, opacity: 0.8 }} variant="body2">
+                Pull status: {pullStatus?.status || "idle"}.
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+      ) : null}
     </Box>
   );
 
@@ -1581,8 +1627,8 @@ export default function App() {
         elevation={0}
         position="fixed"
         sx={{
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          ml: { md: `${drawerWidth}px` },
+          width: { md: `calc(100% - ${desktopDrawerWidth}px)` },
+          ml: { md: `${desktopDrawerWidth}px` },
           borderBottom: "1px solid rgba(31, 41, 55, 0.08)",
           backdropFilter: "blur(18px)",
           backgroundColor: alpha("#f4efe7", 0.82),
@@ -1592,6 +1638,14 @@ export default function App() {
           <IconButton onClick={() => setMobileOpen(true)} sx={{ display: { md: "none" } }}>
             <MenuRoundedIcon />
           </IconButton>
+          <Tooltip title={desktopNavCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            <IconButton
+              onClick={() => setDesktopNavCollapsed((current) => !current)}
+              sx={{ display: { xs: "none", md: "inline-flex" } }}
+            >
+              {desktopNavCollapsed ? <ChevronRightRoundedIcon /> : <ChevronLeftRoundedIcon />}
+            </IconButton>
+          </Tooltip>
           <TextField
             sx={{ flex: 1, minWidth: { xs: 140, sm: 260 } }}
             placeholder="Search company, code, incident type, source signal, or layman summary..."
@@ -1691,25 +1745,25 @@ export default function App() {
         </Toolbar>
       </AppBar>
 
-      <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
+      <Box component="nav" sx={{ width: { md: desktopDrawerWidth }, flexShrink: { md: 0 } }}>
         <Drawer
           variant="temporary"
           open={mobileOpen}
           onClose={() => setMobileOpen(false)}
           ModalProps={{ keepMounted: true }}
-          sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: drawerWidth } }}
+          sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: drawerWidthExpanded } }}
         >
-          {drawer}
+          {renderDrawer(false)}
         </Drawer>
         <Drawer
           variant="permanent"
           sx={{
             display: { xs: "none", md: "block" },
-            "& .MuiDrawer-paper": { width: drawerWidth, boxSizing: "border-box" },
+            "& .MuiDrawer-paper": { width: desktopDrawerWidth, boxSizing: "border-box" },
           }}
           open
         >
-          {drawer}
+          {renderDrawer(desktopNavCollapsed)}
         </Drawer>
       </Box>
 
@@ -1717,7 +1771,7 @@ export default function App() {
         component="main"
         sx={{
           flexGrow: 1,
-          width: { md: `calc(100% - ${drawerWidth}px)` },
+          width: { md: `calc(100% - ${desktopDrawerWidth}px)` },
           px: { xs: 2, md: 4 },
           py: 4,
         }}
@@ -1752,7 +1806,6 @@ export default function App() {
               {activeView === "hot-eye-leads" && "Hot Eye Leads"}
               {activeView === "ppe-opportunity" && "PPE Opportunity"}
               {activeView === "source-signals" && "Source Signals"}
-              {activeView === "saved-views" && "Saved Views"}
               {activeView === "settings" && "Settings"}
             </Typography>
             <Typography sx={{ mt: 1, maxWidth: 760 }} color="text.secondary" variant="body1">
@@ -1802,6 +1855,13 @@ export default function App() {
                   </Button>
                   <Button
                     size="small"
+                    variant={showAdvancedFilters ? "contained" : "outlined"}
+                    onClick={() => setShowAdvancedFilters((current) => !current)}
+                  >
+                    {showAdvancedFilters ? "Hide Advanced" : "More Filters"}
+                  </Button>
+                  <Button
+                    size="small"
                     variant="text"
                     disabled={!hasActiveFilters}
                     onClick={clearAllFilters}
@@ -1811,7 +1871,7 @@ export default function App() {
                 </Stack>
               </Stack>
               <Grid container spacing={2}>
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Region</InputLabel>
                     <Select label="Region" value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)}>
@@ -1822,18 +1882,7 @@ export default function App() {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>County</InputLabel>
-                    <Select label="County" value={countyFilter} onChange={(event) => setCountyFilter(event.target.value)}>
-                      <MenuItem value="All">All counties</MenuItem>
-                      {countyOptions.map((county) => (
-                        <MenuItem key={county} value={county}>{county} County</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Priority</InputLabel>
                     <Select
@@ -1851,17 +1900,6 @@ export default function App() {
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
                   <FormControl fullWidth size="small">
-                    <InputLabel>Source</InputLabel>
-                    <Select label="Source" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-                      <MenuItem value="All">All sources</MenuItem>
-                      {sourceOptions.map((source) => (
-                        <MenuItem key={source} value={source}>{source}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-                  <FormControl fullWidth size="small">
                     <InputLabel>Incident Type</InputLabel>
                     <Select
                       label="Incident Type"
@@ -1874,35 +1912,6 @@ export default function App() {
                           {incidentType}
                         </MenuItem>
                       ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Lead Type</InputLabel>
-                    <Select
-                      label="Lead Type"
-                      value={leadTypeFilter}
-                      onChange={(event) => setLeadTypeFilter(event.target.value)}
-                    >
-                      <MenuItem value="All">All lead types</MenuItem>
-                      <MenuItem value="incident">Incident (3-year PPE/Eye-Face)</MenuItem>
-                      <MenuItem value="profile_fit">Profile Fit (No qualifying 3-year incident)</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Geo Match</InputLabel>
-                    <Select
-                      label="Geo Match"
-                      value={geoMatchFilter}
-                      onChange={(event) => setGeoMatchFilter(event.target.value)}
-                    >
-                      <MenuItem value="All">All geo matches</MenuItem>
-                      <MenuItem value="bay_radius">Bay Area within 50 miles</MenuItem>
-                      <MenuItem value="san_diego_area">San Diego area</MenuItem>
-                      <MenuItem value="bay_radius|san_diego_area">Bay + San Diego overlap</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
@@ -1935,6 +1944,61 @@ export default function App() {
                     </Select>
                   </FormControl>
                 </Grid>
+                {showAdvancedFilters ? (
+                  <>
+                    <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>County</InputLabel>
+                        <Select label="County" value={countyFilter} onChange={(event) => setCountyFilter(event.target.value)}>
+                          <MenuItem value="All">All counties</MenuItem>
+                          {countyOptions.map((county) => (
+                            <MenuItem key={county} value={county}>{county} County</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Source</InputLabel>
+                        <Select label="Source" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+                          <MenuItem value="All">All sources</MenuItem>
+                          {sourceOptions.map((source) => (
+                            <MenuItem key={source} value={source}>{source}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Lead Type</InputLabel>
+                        <Select
+                          label="Lead Type"
+                          value={leadTypeFilter}
+                          onChange={(event) => setLeadTypeFilter(event.target.value)}
+                        >
+                          <MenuItem value="All">All lead types</MenuItem>
+                          <MenuItem value="incident">Incident (3-year PPE/Eye-Face)</MenuItem>
+                          <MenuItem value="profile_fit">Profile Fit (No qualifying 3-year incident)</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Geo Match</InputLabel>
+                        <Select
+                          label="Geo Match"
+                          value={geoMatchFilter}
+                          onChange={(event) => setGeoMatchFilter(event.target.value)}
+                        >
+                          <MenuItem value="All">All geo matches</MenuItem>
+                          <MenuItem value="bay_radius">Bay Area within 50 miles</MenuItem>
+                          <MenuItem value="san_diego_area">San Diego area</MenuItem>
+                          <MenuItem value="bay_radius|san_diego_area">Bay + San Diego overlap</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  </>
+                ) : null}
               </Grid>
             </CardContent>
           </Card>
@@ -1999,25 +2063,7 @@ export default function App() {
                       <Typography variant="h6">Best Next Calls (Hot Eye Leads)</Typography>
                       <Stack spacing={2} sx={{ mt: 2 }}>
                         {hotEyeLeads.slice(0, 4).map((lead) => (
-                          <Box key={lead.id}>
-                            <MemoLeadCard lead={lead} compact={settings.compactCards} />
-                            {namedAccounts[normalizeCompanyKey(lead.company)] ? (
-                              <Box sx={{ mt: 0.75, mb: 0.5 }}>
-                                <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
-                              </Box>
-                            ) : null}
-                            <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="error"
-                              startIcon={<BlockRoundedIcon />}
-                              onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
-                              sx={{ mt: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-                            >
-                              Not a Fit
-                            </Button>
-                          </Box>
+                          <Box key={lead.id}>{renderLeadWorkflowCard(lead)}</Box>
                         ))}
                         {hotEyeLeads.length === 0 ? (
                           <Typography color="text.secondary" variant="body2">
@@ -2063,21 +2109,7 @@ export default function App() {
               {leadQueueVisibleRows.map((lead) => (
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
-                    <MemoLeadCard lead={lead} compact={settings.compactCards} />
-                    {namedAccounts[normalizeCompanyKey(lead.company)] ? (
-                      <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
-                    ) : null}
-                    <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="error"
-                      startIcon={<BlockRoundedIcon />}
-                      onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
-                      sx={{ alignSelf: "flex-start", opacity: 0.7, "&:hover": { opacity: 1 } }}
-                    >
-                      Not a Fit
-                    </Button>
+                    {renderLeadWorkflowCard(lead)}
                   </Stack>
                 </Grid>
               ))}
@@ -2104,21 +2136,7 @@ export default function App() {
               {hotEyeVisibleRows.map((lead) => (
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
-                    <MemoLeadCard lead={lead} compact={settings.compactCards} />
-                    {namedAccounts[normalizeCompanyKey(lead.company)] ? (
-                      <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
-                    ) : null}
-                    <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="error"
-                      startIcon={<BlockRoundedIcon />}
-                      onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
-                      sx={{ alignSelf: "flex-start", opacity: 0.7, "&:hover": { opacity: 1 } }}
-                    >
-                      Not a Fit
-                    </Button>
+                    {renderLeadWorkflowCard(lead)}
                   </Stack>
                 </Grid>
               ))}
@@ -2145,21 +2163,7 @@ export default function App() {
               {ppeVisibleRows.map((lead) => (
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
-                    <MemoLeadCard lead={lead} compact={settings.compactCards} />
-                    {namedAccounts[normalizeCompanyKey(lead.company)] ? (
-                      <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
-                    ) : null}
-                    <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="error"
-                      startIcon={<BlockRoundedIcon />}
-                      onClick={() => { setBadLeadReason("wrong_industry"); setBadLeadDialogLead(lead); }}
-                      sx={{ alignSelf: "flex-start", opacity: 0.7, "&:hover": { opacity: 1 } }}
-                    >
-                      Not a Fit
-                    </Button>
+                    {renderLeadWorkflowCard(lead)}
                   </Stack>
                 </Grid>
               ))}
@@ -2221,43 +2225,6 @@ export default function App() {
                 </Table>
               </CardContent>
             </Card>
-          ) : null}
-
-          {activeView === "saved-views" ? (
-            <Grid container spacing={2.5}>
-              {[
-                {
-                  title: "Immediate Calls",
-                  note: "P0 and call-now leads with open violations or severe incidents.",
-                },
-                {
-                  title: "Prescription Safety Queue",
-                  note: "Accounts with 1910.133(a)(3) or other prescription-related violation evidence.",
-                },
-                {
-                  title: "Research Before Outreach",
-                  note: "P2 accounts with good evidence but unclear ownership or timing.",
-                },
-                {
-                  title: "Multi-source Proof",
-                  note: "Accounts matched by more than one data source for stronger stories.",
-                },
-              ].map((view) => (
-                <Grid key={view.title} size={{ xs: 12, md: 6 }}>
-                  <Card>
-                    <CardContent>
-                      <Typography variant="h6">{view.title}</Typography>
-                      <Typography sx={{ mt: 1 }} color="text.secondary" variant="body2">
-                        {view.note}
-                      </Typography>
-                      <Button sx={{ mt: 2 }} variant="outlined">
-                        Open View
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
           ) : null}
 
           {activeView === "settings" ? (

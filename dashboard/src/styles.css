@@ -7,9 +7,9 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(201, 111, 49, 0.14), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(31, 111, 120, 0.14), transparent 28%),
-    #f4efe7;
+    radial-gradient(circle at top left, rgba(199, 119, 63, 0.16), transparent 36%),
+    radial-gradient(circle at bottom right, rgba(18, 50, 74, 0.14), transparent 32%),
+    #f7f2e9;
 }
 
 #root {
@@ -22,5 +22,5 @@ body {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(199, 119, 63, 0.2);
 }

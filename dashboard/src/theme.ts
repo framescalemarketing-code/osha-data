@@ -9,34 +9,34 @@ export function buildTheme(mode: DashboardTheme) {
     palette: {
       mode: "light",
       primary: {
-        main: signal ? "#1f6f78" : "#345c7c",
+        main: signal ? "#12324a" : "#345c7c",
       },
       secondary: {
-        main: signal ? "#c96f31" : "#6b7280",
+        main: signal ? "#c7773f" : "#6b7280",
       },
       background: {
-        default: signal ? "#f4efe7" : "#f3f5f7",
-        paper: "#fffdf9",
+        default: signal ? "#f7f2e9" : "#f3f5f7",
+        paper: "#fffaf3",
       },
       success: {
-        main: "#2e7d5b",
+        main: "#2c7a5a",
       },
       warning: {
-        main: "#c57c1f",
+        main: "#be7a22",
       },
       error: {
-        main: "#bd4d3e",
+        main: "#b84a3a",
       },
       text: {
-        primary: "#1e2932",
-        secondary: "#56616b",
+        primary: "#1b2a36",
+        secondary: "#5b6670",
       },
     },
     shape: {
       borderRadius: 18,
     },
     typography: {
-      fontFamily: '"Segoe UI", "Helvetica Neue", sans-serif',
+      fontFamily: '"Montserrat", "Segoe UI", "Helvetica Neue", sans-serif',
       h3: {
         fontWeight: 700,
       },
@@ -58,8 +58,8 @@ export function buildTheme(mode: DashboardTheme) {
       MuiCard: {
         styleOverrides: {
           root: {
-            border: "1px solid rgba(31, 41, 55, 0.08)",
-            boxShadow: "0 18px 40px rgba(27, 39, 51, 0.08)",
+            border: "1px solid rgba(18, 50, 74, 0.12)",
+            boxShadow: "0 14px 30px rgba(18, 50, 74, 0.09)",
           },
         },
       },
@@ -67,7 +67,7 @@ export function buildTheme(mode: DashboardTheme) {
         styleOverrides: {
           paper: {
             background:
-              "linear-gradient(180deg, rgba(28,60,73,0.98) 0%, rgba(42,47,66,0.98) 100%)",
+              "linear-gradient(180deg, rgba(15,43,64,0.98) 0%, rgba(24,58,84,0.98) 100%)",
             color: "#f6f3ee",
           },
         },
