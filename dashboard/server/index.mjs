@@ -955,7 +955,15 @@ LIMIT 500
 
   const rawJson = await executeSql(fastSql);
   const rows = JSON.parse(rawJson);
-  return rows.map(toLeadRecord);
+  const records = rows.map(toLeadRecord);
+  // Safety-net dedup: keep first occurrence of each (normalized_name + city + zip) pair
+  const seen = new Set();
+  return records.filter((r) => {
+    const key = `${(r.company || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()}|${r.city || ''}|${r.zip || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function fetchLiveLeadTableCount() {

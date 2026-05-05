@@ -135,7 +135,15 @@ LIMIT 600
 async function fetchLiveLeads() {
   const bq = getBigQueryClient();
   const [rows] = await bq.query({ query: LEADS_SQL, useLegacySql: false });
-  return rows.map(toLeadRecord);
+  const records = rows.map(toLeadRecord);
+  // Safety-net dedup: keep first occurrence of each (normalized_name + zip) pair
+  const seen = new Set();
+  return records.filter((r) => {
+    const key = `${(r.company || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()}|${r.city || ''}|${r.zip || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function fetchLeadTableCount() {

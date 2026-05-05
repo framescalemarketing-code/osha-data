@@ -664,6 +664,15 @@ city_leads AS (
             = UPPER(REGEXP_REPLACE(ol.account_name, r'[^A-Z0-9]', ''))
         AND LEFT(TRIM(c.zip_code), 5) = ol.site_zip
     )
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY
+      UPPER(REGEXP_REPLACE(
+        COALESCE(NULLIF(TRIM(c.dba_name), ''), TRIM(c.business_name)),
+        r'[^A-Z0-9]', ''
+      )),
+      LEFT(TRIM(c.zip_code), 5)
+    ORDER BY c.start_date DESC NULLS LAST
+  ) = 1
 )
 SELECT * FROM osha_leads
 UNION ALL
