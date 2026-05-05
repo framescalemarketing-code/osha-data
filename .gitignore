@@ -16,4 +16,6 @@ dashboard/.runtime/
 dashboard-dev*.log
 package-lock.json
 metabase/*.json
+dashboard/bq-service-account.json
+dashboard/api/_lib/bq-service-account.json
 
