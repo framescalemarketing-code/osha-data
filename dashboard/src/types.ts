@@ -20,7 +20,11 @@ export type IncidentType =
   | "Prescription Safety"
   | "Fit And Training Gap"
   | "Impact Hazard"
-  | "General PPE";
+  | "General PPE"
+  | "Profile Fit";
+
+export type LeadType = "incident" | "profile_fit";
+export type GeoMatchSource = "bay_radius" | "san_diego_area" | "bay_radius|san_diego_area" | "none";
 
 export type IncidentDateSource =
   | "accident"
@@ -42,6 +46,12 @@ export type LeadRecord = {
   region: string;
   county?: string;
   distanceFromMiramarMiles?: number | null;
+  bayAreaDistanceMiles?: number | null;
+  isWithinBayArea50Mi?: boolean;
+  isSanDiegoArea?: boolean;
+  geoMatchSource?: GeoMatchSource;
+  leadType?: LeadType;
+  qualifiesIncident3Year?: boolean;
   city: string;
   industry: string;
   ownerType: string;

@@ -95,6 +95,7 @@ const incidentOptions: IncidentType[] = [
   "Fit And Training Gap",
   "Impact Hazard",
   "General PPE",
+  "Profile Fit",
 ];
 
 const CONTACT_READY_ACTIONS: LeadRecord["action"][] = [
@@ -175,6 +176,45 @@ function getTierLabelForLead(lead: LeadRecord): string {
   return getTierLabel(lead.leadTier ?? "P3 Industry Fit");
 }
 
+function getDistanceLabelForLead(lead: LeadRecord): string {
+  const bay = lead.bayAreaDistanceMiles;
+  const sanDiego = lead.distanceFromMiramarMiles;
+  const geo = lead.geoMatchSource || "none";
+
+  if (geo === "bay_radius" && bay != null) {
+    return `${bay.toFixed(1)} mi from 16440 Ashland Ave (San Lorenzo)`;
+  }
+
+  if (geo === "san_diego_area" && sanDiego != null) {
+    return `${sanDiego.toFixed(1)} mi from San Diego anchor`;
+  }
+
+  if (geo === "bay_radius|san_diego_area") {
+    if (bay != null && sanDiego != null) {
+      if (bay <= sanDiego) {
+        return `${bay.toFixed(1)} mi from 16440 Ashland Ave (San Lorenzo)`;
+      }
+      return `${sanDiego.toFixed(1)} mi from San Diego anchor`;
+    }
+    if (bay != null) {
+      return `${bay.toFixed(1)} mi from 16440 Ashland Ave (San Lorenzo)`;
+    }
+    if (sanDiego != null) {
+      return `${sanDiego.toFixed(1)} mi from San Diego anchor`;
+    }
+  }
+
+  if (lead.isWithinBayArea50Mi && bay != null) {
+    return `${bay.toFixed(1)} mi from 16440 Ashland Ave (San Lorenzo)`;
+  }
+
+  if (lead.isSanDiegoArea && sanDiego != null) {
+    return `${sanDiego.toFixed(1)} mi from San Diego anchor`;
+  }
+
+  return "";
+}
+
 function getPriorityTone(priority: LeadRecord["priority"]) {
   switch (priority) {
     case "P0 Ideal":
@@ -233,6 +273,7 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
   const tier = lead.leadTier ?? "P3 Industry Fit";
   const tierStyle = getTierColor(tier);
   const pad = compact ? 2 : 2.5;
+  const distanceLabel = getDistanceLabelForLead(lead);
 
   const compactChipSx = {
     height: 24,
@@ -264,7 +305,7 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
             <Typography color="text.secondary" variant="caption" sx={{ display: "block", lineHeight: 1.3 }}>
               {lead.city}
               {lead.county ? `, ${lead.county} County` : ""} · {lead.region}
-              {lead.distanceFromMiramarMiles != null ? ` · ${lead.distanceFromMiramarMiles.toFixed(1)} mi from Miramar` : ""}
+              {distanceLabel ? ` · ${distanceLabel}` : ""}
             </Typography>
             <Typography color="text.secondary" variant="caption" sx={{ display: "block", lineHeight: 1.3 }}>
               {lead.industry || lead.ownerType}
@@ -576,6 +617,8 @@ export default function App() {
   const [priorityFilter, setPriorityFilter] = React.useState("All");
   const [sourceFilter, setSourceFilter] = React.useState("All");
   const [incidentFilter, setIncidentFilter] = React.useState("All");
+  const [leadTypeFilter, setLeadTypeFilter] = React.useState("All");
+  const [geoMatchFilter, setGeoMatchFilter] = React.useState("All");
   const [settings, setSettings] = React.useState(initialSettings);
   const [liveLeads, setLiveLeads] = React.useState<LeadRecord[]>([]);
   const [totalAvailableLeads, setTotalAvailableLeads] = React.useState<number | null>(null);
@@ -801,12 +844,25 @@ export default function App() {
         if (priorityFilter !== "All" && lead.leadTier !== priorityFilter) return false;
         if (sourceFilter !== "All" && !lead.matchedSources.includes(sourceFilter)) return false;
         if (incidentFilter !== "All" && lead.incidentType !== incidentFilter) return false;
+        if (leadTypeFilter !== "All" && (lead.leadType || "profile_fit") !== leadTypeFilter) return false;
+        if (geoMatchFilter !== "All" && (lead.geoMatchSource || "none") !== geoMatchFilter) return false;
         if (settings.showOnlyContactReady && !CONTACT_READY_ACTIONS.includes(lead.action)) {
           return false;
         }
         return true;
       }),
-    [leadData, query, regionFilter, countyFilter, priorityFilter, sourceFilter, incidentFilter, settings.showOnlyContactReady],
+    [
+      leadData,
+      query,
+      regionFilter,
+      countyFilter,
+      priorityFilter,
+      sourceFilter,
+      incidentFilter,
+      leadTypeFilter,
+      geoMatchFilter,
+      settings.showOnlyContactReady,
+    ],
   );
 
   const contactReadyLoadedCount = React.useMemo(
@@ -821,9 +877,21 @@ export default function App() {
       priorityFilter !== "All" ||
       sourceFilter !== "All" ||
       incidentFilter !== "All" ||
+      leadTypeFilter !== "All" ||
+      geoMatchFilter !== "All" ||
       query.trim().length > 0 ||
       settings.showOnlyContactReady,
-    [regionFilter, countyFilter, priorityFilter, sourceFilter, incidentFilter, query, settings.showOnlyContactReady],
+    [
+      regionFilter,
+      countyFilter,
+      priorityFilter,
+      sourceFilter,
+      incidentFilter,
+      leadTypeFilter,
+      geoMatchFilter,
+      query,
+      settings.showOnlyContactReady,
+    ],
   );
 
   const clearAllFilters = () => {
@@ -832,6 +900,8 @@ export default function App() {
     setPriorityFilter("All");
     setSourceFilter("All");
     setIncidentFilter("All");
+    setLeadTypeFilter("All");
+    setGeoMatchFilter("All");
     setQuery("");
     setSettings((current) => ({ ...current, showOnlyContactReady: false }));
   };
@@ -1309,6 +1379,35 @@ export default function App() {
                           {incidentType}
                         </MenuItem>
                       ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Lead Type</InputLabel>
+                    <Select
+                      label="Lead Type"
+                      value={leadTypeFilter}
+                      onChange={(event) => setLeadTypeFilter(event.target.value)}
+                    >
+                      <MenuItem value="All">All lead types</MenuItem>
+                      <MenuItem value="incident">Incident (3-year PPE/Eye-Face)</MenuItem>
+                      <MenuItem value="profile_fit">Profile Fit (No qualifying 3-year incident)</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Geo Match</InputLabel>
+                    <Select
+                      label="Geo Match"
+                      value={geoMatchFilter}
+                      onChange={(event) => setGeoMatchFilter(event.target.value)}
+                    >
+                      <MenuItem value="All">All geo matches</MenuItem>
+                      <MenuItem value="bay_radius">Bay Area within 50 miles</MenuItem>
+                      <MenuItem value="san_diego_area">San Diego area</MenuItem>
+                      <MenuItem value="bay_radius|san_diego_area">Bay + San Diego overlap</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>

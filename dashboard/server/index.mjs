@@ -15,6 +15,33 @@ const outcomesFile = path.resolve(runtimeDir, "lead-outcomes.json");
 const leadsSnapshotFile = path.resolve(runtimeDir, "leads-cache.json");
 const port = Number(process.env.DASHBOARD_API_PORT || 8787);
 const LEADS_CACHE_TTL_MS = 45_000;
+const BAY_AREA_ANCHOR_LAT = 37.6776;
+const BAY_AREA_ANCHOR_LON = -122.1297;
+const BAY_AREA_RADIUS_MILES = 50;
+// 6780 Miramar Rd, San Diego, CA 92121
+const SAN_DIEGO_ANCHOR_LAT = 32.8730;
+const SAN_DIEGO_ANCHOR_LON = -117.1604;
+const SAN_DIEGO_RADIUS_MILES = 50;
+const SAN_DIEGO_BORDER_CITIES = [
+  "SAN DIEGO",
+  "CHULA VISTA",
+  "NATIONAL CITY",
+  "LA MESA",
+  "EL CAJON",
+  "SANTEE",
+  "LEMON GROVE",
+  "IMPERIAL BEACH",
+  "CORONADO",
+  "POWAY",
+  "ESCONDIDO",
+  "VISTA",
+  "OCEANSIDE",
+  "CARLSBAD",
+  "SAN MARCOS",
+  "ENCINITAS",
+  "DEL MAR",
+  "SOLANA BEACH",
+];
 
 const app = express();
 app.use(express.json());
@@ -270,6 +297,10 @@ function normalizeCodes(rawStandards) {
 }
 
 function inferIncidentType(row) {
+  if (String(row["lead_type"] || "").toLowerCase() === "profile_fit") {
+    return "Profile Fit";
+  }
+
   // v3 schema: derive from new score/count fields
   const eyeInjury = Number(row["eye_injury_count"] || 0) > 0;
   const prescription = Number(row["prescription_violation_count"] || 0) > 0;
@@ -305,6 +336,140 @@ function resolveIncidentDate(row) {
   return { value: null, source: "unknown" };
 }
 
+function normalizeNaicsCode(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length >= 2 ? digits : "";
+}
+
+function industryFromNaics(naicsCode) {
+  const code = normalizeNaicsCode(naicsCode);
+  if (!code) return "";
+
+  const exact = {
+    "211120": "Crude Petroleum Extraction",
+    "221122": "Electric Power Distribution",
+    "311615": "Poultry Processing",
+    "312120": "Breweries",
+    "324110": "Petroleum Refineries",
+    "325199": "Basic Organic Chemical Manufacturing",
+    "325412": "Pharmaceutical Preparation Manufacturing",
+    "325413": "In-Vitro Diagnostic Substance Manufacturing",
+    "325414": "Biological Product Manufacturing",
+    "325510": "Paint and Coating Manufacturing",
+    "325611": "Soap and Detergent Manufacturing",
+    "325998": "Chemical Product Manufacturing",
+    "326199": "Plastic Product Manufacturing",
+    "332710": "Machine Shops",
+    "332994": "Small Arms Manufacturing",
+    "333120": "Construction Machinery Manufacturing",
+    "333314": "Optical Instrument and Lens Manufacturing",
+    "333415": "HVAC and Commercial Refrigeration Equipment Manufacturing",
+    "334413": "Semiconductor and Related Device Manufacturing",
+    "334416": "Capacitor, Resistor, Coil, Transformer Manufacturing",
+    "334510": "Electromedical and Electrotherapeutic Apparatus Manufacturing",
+    "334516": "Analytical Laboratory Instrument Manufacturing",
+    "334519": "Measuring and Controlling Device Manufacturing",
+    "336411": "Aircraft Manufacturing",
+    "336412": "Aircraft Engine and Engine Parts Manufacturing",
+    "336413": "Other Aircraft Parts and Equipment Manufacturing",
+    "339112": "Surgical and Medical Instrument Manufacturing",
+    "339113": "Surgical Appliance and Supplies Manufacturing",
+    "423450": "Medical, Dental, and Hospital Equipment Wholesalers",
+    "493110": "General Warehousing and Storage",
+    "541380": "Testing Laboratories",
+    "541714": "Research and Development in Biotechnology",
+    "562910": "Remediation Services",
+  };
+
+  if (exact[code]) {
+    return `${exact[code]} (NAICS ${code})`;
+  }
+
+  const prefixRules = [
+    ["3254", "Pharmaceutical and Medicine Manufacturing"],
+    ["325", "Chemical Manufacturing"],
+    ["334", "Computer and Electronic Product Manufacturing"],
+    ["3364", "Aerospace Product and Parts Manufacturing"],
+    ["336", "Transportation Equipment Manufacturing"],
+    ["3391", "Medical Equipment and Supplies Manufacturing"],
+    ["339", "Miscellaneous Manufacturing"],
+    ["333", "Machinery Manufacturing"],
+    ["332", "Fabricated Metal Product Manufacturing"],
+    ["311", "Food Manufacturing"],
+    ["312", "Beverage and Tobacco Product Manufacturing"],
+    ["493", "Warehousing and Storage"],
+    ["5417", "Scientific Research and Development Services"],
+    ["541", "Professional, Scientific, and Technical Services"],
+    ["562", "Waste Management and Remediation Services"],
+    ["42", "Merchant Wholesalers"],
+    ["23", "Construction"],
+    ["31", "Manufacturing"],
+    ["32", "Manufacturing"],
+    ["33", "Manufacturing"],
+  ];
+
+  for (const [prefix, label] of prefixRules) {
+    if (code.startsWith(prefix)) {
+      return `${label} (NAICS ${code})`;
+    }
+  }
+
+  return "";
+}
+
+function resolveIndustryLabel(row) {
+  const naicsLabel = industryFromNaics(row["naics_code"]);
+  if (naicsLabel) {
+    return naicsLabel;
+  }
+  return String(row["industry_segment"] || "").trim() || "Unknown Industry";
+}
+
+function normalizeCaliforniaRegion(row) {
+  const state = String(row["site_state"] || "").trim().toUpperCase();
+  const city = String(row["site_city"] || "").trim().toUpperCase();
+  const rawRegion = String(row["region"] || "").trim().toUpperCase();
+
+  if (state && state !== "CA") {
+    return String(row["region"] || "Other").trim() || "Other";
+  }
+
+  // Primary: use geo_match_source which is distance-based and authoritative
+  const geoSrc = String(row["geo_match_source"] || "").toLowerCase();
+  if (geoSrc === "bay_radius") return "Northern California";
+  if (geoSrc === "san_diego_area") return "Southern California";
+  if (geoSrc === "bay_radius|san_diego_area") {
+    // Overlap edge case: assign to whichever anchor is closer
+    const bayDist = Number(row["bay_area_distance_miles"] ?? 999999);
+    const sdDist = Number(row["san_diego_distance_miles"] ?? 999999);
+    return bayDist <= sdDist ? "Northern California" : "Southern California";
+  }
+
+  // Fallback: city-based for records without geo_match_source
+  const northernCitiesFallback = new Set([
+    "SAN FRANCISCO", "OAKLAND", "BERKELEY", "RICHMOND", "SAN JOSE", "FREMONT",
+    "PALO ALTO", "MOUNTAIN VIEW", "SUNNYVALE", "REDWOOD CITY", "SAN MATEO",
+    "MENLO PARK", "BURLINGAME", "SOUTH SAN FRANCISCO", "SANTA CLARA",
+    "WALNUT CREEK", "CONCORD", "ANTIOCH", "PITTSBURG", "BRENTWOOD",
+    "LIVERMORE", "HAYWARD", "SAN LEANDRO", "SAN LORENZO",
+  ]);
+  const southernCitiesFallback = new Set([
+    "SAN DIEGO", "CHULA VISTA", "EL CAJON", "SANTEE", "LA MESA",
+    "NATIONAL CITY", "IMPERIAL BEACH", "CORONADO", "POWAY", "ESCONDIDO",
+    "VISTA", "OCEANSIDE", "CARLSBAD", "SAN MARCOS", "ENCINITAS", "DEL MAR",
+    "LOS ANGELES", "LONG BEACH", "ANAHEIM", "IRVINE", "SANTA ANA",
+    "RIVERSIDE", "SAN BERNARDINO",
+  ]);
+
+  if (northernCitiesFallback.has(city)) return "Northern California";
+  if (southernCitiesFallback.has(city)) return "Southern California";
+
+  if (rawRegion.includes("BAY") || rawRegion.includes("NORTH")) return "Northern California";
+  if (rawRegion.includes("LOS ANGELES") || rawRegion.includes("SOUTH") || rawRegion.includes("SAN DIEGO")) return "Southern California";
+
+  return "Northern California";
+}
+
 function toLeadRecord(row) {
   const incidentDateInfo = resolveIncidentDate(row);
   const incidentDateIso = incidentDateInfo.value
@@ -316,6 +481,7 @@ function toLeadRecord(row) {
     : 0;
 
   const tier = row["lead_tier"] || "P3 Industry Fit";
+  const leadType = String(row["lead_type"] || (row["inspection_id"] ? "incident" : "profile_fit"));
   const finalScore = Number(row["final_score"] || 0);
   const isCityLicenseLead = !row["inspection_id"];
 
@@ -346,14 +512,29 @@ function toLeadRecord(row) {
   return {
     id: `lead-${row["inspection_id"] || row["account_name"] || Math.random().toString(16).slice(2)}`,
     company: row["account_name"] || "Unknown Company",
-    region: row["region"] || "Southern California",
+    region: normalizeCaliforniaRegion(row),
     county: row["county"] || "",
     distanceFromMiramarMiles:
-      row["distance_from_miramar_miles"] === null || row["distance_from_miramar_miles"] === undefined
+      row["san_diego_distance_miles"] != null
+        ? Number(row["san_diego_distance_miles"])
+        : (row["distance_from_miramar_miles"] != null ? Number(row["distance_from_miramar_miles"]) : null),
+    bayAreaDistanceMiles:
+      row["bay_area_distance_miles"] === null || row["bay_area_distance_miles"] === undefined
         ? null
-        : Number(row["distance_from_miramar_miles"]),
+        : Number(row["bay_area_distance_miles"]),
+    isWithinBayArea50Mi:
+      row["is_within_bay_area_50mi"] === true
+      || String(row["is_within_bay_area_50mi"] || "").toLowerCase() === "true",
+    isSanDiegoArea:
+      row["is_san_diego_area"] === true
+      || String(row["is_san_diego_area"] || "").toLowerCase() === "true",
+    geoMatchSource: String(row["geo_match_source"] || "none"),
+    leadType,
+    qualifiesIncident3Year:
+      row["qualifies_incident_3yr"] === true
+      || String(row["qualifies_incident_3yr"] || "").toLowerCase() === "true",
     city: row["site_city"] || "",
-    industry: row["industry_segment"] || "",
+    industry: resolveIndustryLabel(row),
     ownerType: row["ownership_type"] || "",
 
     // v3 scores
@@ -563,98 +744,113 @@ SELECT
   has_open_violations
 FROM \`${cfg.projectId}.${cfg.dataset}.dashboard_leads_current\`
 ),
-osha_pool AS (
-  SELECT *
-  FROM base
-  WHERE inspection_id IS NOT NULL
-    AND lead_tier IN ('P0 Hot Eye', 'P1 Eye Violation', 'P2 PPE Opportunity')
+geo_enriched AS (
+  SELECT
+    b.*,
+    ROUND(
+      SAFE_DIVIDE(
+        ST_DISTANCE(
+          zg.internal_point_geom,
+          ST_GEOGPOINT(${BAY_AREA_ANCHOR_LON}, ${BAY_AREA_ANCHOR_LAT})
+        ),
+        1609.344
+      ),
+      1
+    ) AS bay_area_distance_miles,
+    ROUND(
+      SAFE_DIVIDE(
+        ST_DISTANCE(
+          zg.internal_point_geom,
+          ST_GEOGPOINT(${SAN_DIEGO_ANCHOR_LON}, ${SAN_DIEGO_ANCHOR_LAT})
+        ),
+        1609.344
+      ),
+      1
+    ) AS san_diego_distance_miles
+  FROM base b
+  LEFT JOIN \`bigquery-public-data.geo_us_boundaries.zip_codes\` zg
+    ON zg.zip_code = LPAD(REGEXP_EXTRACT(COALESCE(b.site_zip, ''), r'(\\d{5})'), 5, '0')
+),
+eligible_geo AS (
+  SELECT
+    ge.*,
+    (COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}) AS is_within_bay_area_50mi,
+    (COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}) AS is_san_diego_area,
+    CASE
+      WHEN COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}
+           AND COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}
+        THEN 'bay_radius|san_diego_area'
+      WHEN COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}
+        THEN 'bay_radius'
+      WHEN COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}
+        THEN 'san_diego_area'
+      ELSE 'none'
+    END AS geo_match_source
+  FROM geo_enriched ge
+  WHERE
+    UPPER(TRIM(COALESCE(ge.site_state, ''))) = 'CA'
     AND (
-      lead_tier IN ('P0 Hot Eye', 'P1 Eye Violation')
-      OR (
-        lead_tier = 'P2 PPE Opportunity'
-        AND (
-          COALESCE(eye_injury_count, 0) > 0
-          OR COALESCE(eye_violation_count, 0) > 0
-          OR COALESCE(prescription_violation_count, 0) > 0
-          OR COALESCE(open_eye_violation_count, 0) > 0
-          OR COALESCE(general_ppe_violation_count, 0) > 0
-          OR COALESCE(open_general_ppe_violation_count, 0) > 0
-        )
+      COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}
+      OR COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}
+    )
+),
+classified AS (
+  SELECT
+    eg.*,
+    IFNULL((
+      (
+        COALESCE(eg.eye_injury_count, 0) > 0
+        OR COALESCE(eg.face_head_injury_count, 0) > 0
+        OR COALESCE(eg.eye_violation_count, 0) > 0
+        OR COALESCE(eg.prescription_violation_count, 0) > 0
+        OR COALESCE(eg.open_eye_violation_count, 0) > 0
+        OR COALESCE(eg.general_ppe_violation_count, 0) > 0
+        OR COALESCE(eg.open_general_ppe_violation_count, 0) > 0
       )
-    )
-  ORDER BY
-    CASE lead_tier
-      WHEN 'P0 Hot Eye' THEN 0
-      WHEN 'P1 Eye Violation' THEN 1
-      WHEN 'P2 PPE Opportunity' THEN 2
-      ELSE 3
-    END,
-    final_score DESC,
-    IF(has_open_violations, 1, 0) DESC
-  LIMIT 320
+      AND COALESCE(eg.last_eye_injury_date, eg.last_violation_event_date, eg.last_violation_date)
+        >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 YEAR)
+    ), FALSE) AS qualifies_incident_3yr
+  FROM eligible_geo eg
 ),
-city_pool AS (
-  SELECT *
-  FROM base
-  WHERE inspection_id IS NULL
-    AND UPPER(COALESCE(site_state, '')) = 'CA'
-    AND REGEXP_CONTAINS(COALESCE(site_zip, ''), r'^9\\d{4}$')
-    AND UPPER(TRIM(COALESCE(account_name, ''))) NOT IN ('', 'NA', 'N/A', 'UNKNOWN', 'NONE', 'NULL')
-    AND lead_tier IN ('P1 Eye Violation', 'P2 PPE Opportunity')
-    AND final_score >= 34
-    AND REGEXP_CONTAINS(COALESCE(naics_code, ''), r'^\\d{6}$')
-    AND industry_segment IN (
-      'Construction',
-      'Manufacturing',
-      'Chemical Manufacturing',
-      'Machinery Manufacturing',
-      'Food/Beverage Manufacturing',
-      'Warehousing/Transport',
-      'Computer/Electronics Manufacturing'
-    )
-    AND (
-      (industry_segment = 'Construction' AND REGEXP_CONTAINS(naics_code, r'^23'))
-      OR (industry_segment = 'Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^(31|32|33)'))
-      OR (industry_segment = 'Chemical Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^325'))
-      OR (industry_segment = 'Machinery Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^333'))
-      OR (industry_segment = 'Food/Beverage Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^(311|312)'))
-      OR (industry_segment = 'Warehousing/Transport' AND REGEXP_CONTAINS(naics_code, r'^(48|49)'))
-      OR (industry_segment = 'Computer/Electronics Manufacturing' AND REGEXP_CONTAINS(naics_code, r'^334'))
-    )
-  ORDER BY final_score DESC, IF(has_open_violations, 1, 0) DESC
-  LIMIT 280
-),
-combined AS (
-  SELECT * FROM osha_pool
-  UNION ALL
-  SELECT * FROM city_pool
+all_valid AS (
+  -- All geo-eligible companies with a real account name
+  SELECT
+    *,
+    CASE WHEN qualifies_incident_3yr THEN 'incident' ELSE 'profile_fit' END AS lead_type
+  FROM classified
+  WHERE UPPER(TRIM(COALESCE(account_name, ''))) NOT IN ('', 'NA', 'N/A', 'UNKNOWN', 'NONE', 'NULL')
 ),
 deduped AS (
+  -- Keep highest-scoring record per company+zip
   SELECT * EXCEPT(rn)
   FROM (
     SELECT
-      c.*,
+      av.*,
       ROW_NUMBER() OVER (
-        PARTITION BY UPPER(COALESCE(c.account_name, '')), COALESCE(c.site_zip, ''), IF(c.inspection_id IS NULL, 'city', c.inspection_id)
-        ORDER BY c.final_score DESC
+        PARTITION BY UPPER(COALESCE(av.account_name, '')), COALESCE(av.site_zip, '')
+        ORDER BY
+          IF(av.qualifies_incident_3yr, 0, 1) ASC,
+          av.final_score DESC
       ) AS rn
-    FROM combined c
+    FROM all_valid av
   )
   WHERE rn = 1
 )
 SELECT *
 FROM deduped
 ORDER BY
+  -- Incident leads (3-yr PPE/eye evidence) always rank above profile-fit
+  IF(qualifies_incident_3yr, 0, 1) ASC,
+  -- Within incident leads: by tier then score
   CASE lead_tier
-    WHEN 'P0 Hot Eye' THEN 0
-    WHEN 'P1 Eye Violation' THEN 1
+    WHEN 'P0 Hot Eye'        THEN 0
+    WHEN 'P1 Eye Violation'  THEN 1
     WHEN 'P2 PPE Opportunity' THEN 2
     ELSE 3
   END ASC,
-  IF(inspection_id IS NULL, 1, 0) ASC,
   final_score DESC,
   IF(has_open_violations, 1, 0) DESC
-LIMIT 500
+LIMIT 600
 `;
 
   const legacySql = `
@@ -752,7 +948,7 @@ LIMIT 500
       "query",
       "--use_legacy_sql=false",
       "--format=prettyjson",
-      "--max_rows=500",
+      "--max_rows=600",
     ], { env: runtimeEnv, timeoutMs: 180000, shell: true, input: sqlText });
   };
 
