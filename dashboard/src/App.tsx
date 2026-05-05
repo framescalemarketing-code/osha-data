@@ -620,7 +620,6 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
   return (
     <Card
       sx={{
-        height: "100%",
         borderTop: `3px solid ${tierStyle.text}`,
         display: "flex",
         flexDirection: "column",
@@ -682,7 +681,7 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
         </Stack>
       </Box>
 
-      <CardContent sx={{ flex: 1, pt: 1.25, pb: 1.25, px: pad, overflow: "auto" }}>
+      <CardContent sx={{ pt: 1.25, pb: 1.25, px: pad }}>
         {/* ── PITCH ── */}
         {lead.pitchRecommendation && (
           <Typography variant="body2" sx={{ fontStyle: "italic", color: "text.secondary", mb: 1 }}>
@@ -1516,7 +1515,8 @@ export default function App() {
   const renderLeadWorkflowCard = (lead: LeadRecord) => {
     const accountEntry = namedAccounts[normalizeCompanyKey(lead.company)];
     return (
-      <Box
+      <Stack
+        spacing={1}
         sx={{
           width: "100%",
           borderRadius: 3,
@@ -1528,25 +1528,28 @@ export default function App() {
       >
         <MemoLeadCard lead={lead} compact={settings.compactCards} />
         {accountEntry ? (
-          <Box sx={{ mt: 0.9 }}>
+          <Box>
             <AccountStatusBadge status={accountEntry.status} label={ACCOUNT_STATUS_LABELS[accountEntry.status]} />
           </Box>
         ) : null}
+        <Divider sx={{ borderColor: "rgba(15, 23, 42, 0.08)" }} />
         <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
-        <Button
-          size="small"
-          variant="outlined"
-          color="error"
-          startIcon={<BlockRoundedIcon />}
-          onClick={() => {
-            setBadLeadReason("wrong_industry");
-            setBadLeadDialogLead(lead);
-          }}
-          sx={{ mt: 1, alignSelf: "flex-start", opacity: 0.78, "&:hover": { opacity: 1 } }}
-        >
-          Not a Fit
-        </Button>
-      </Box>
+        <Box>
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            startIcon={<BlockRoundedIcon />}
+            onClick={() => {
+              setBadLeadReason("wrong_industry");
+              setBadLeadDialogLead(lead);
+            }}
+            sx={{ alignSelf: "flex-start", opacity: 0.86, "&:hover": { opacity: 1 } }}
+          >
+            Not a Fit
+          </Button>
+        </Box>
+      </Stack>
     );
   };
 
@@ -2107,7 +2110,7 @@ export default function App() {
                 </Alert>
               </Grid>
               {leadQueueVisibleRows.map((lead) => (
-                <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
+                <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     {renderLeadWorkflowCard(lead)}
                   </Stack>
@@ -2134,7 +2137,7 @@ export default function App() {
           {activeView === "hot-eye-leads" ? (
             <Grid container spacing={2.5}>
               {hotEyeVisibleRows.map((lead) => (
-                <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
+                <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     {renderLeadWorkflowCard(lead)}
                   </Stack>
@@ -2161,7 +2164,7 @@ export default function App() {
           {activeView === "ppe-opportunity" ? (
             <Grid container spacing={2.5}>
               {ppeVisibleRows.map((lead) => (
-                <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
+                <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     {renderLeadWorkflowCard(lead)}
                   </Stack>
