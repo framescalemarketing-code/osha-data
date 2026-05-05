@@ -247,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
             table="inspection_california_incremental",
             csv_file="inspection_california_incremental.csv",
             checkpoint_file="inspection_california_checkpoint.json",
-            max_pages=2,
+            max_pages=config.inspection_california_max_pages,
         )
         return 0
 
@@ -259,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
             table="inspection_socal_incremental",
             csv_file="inspection_socal_incremental.csv",
             checkpoint_file="inspection_checkpoint.json",
-            max_pages=1,
+            max_pages=config.inspection_socal_max_pages,
         )
         return 0
 
@@ -271,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             table="inspection_bayarea_incremental",
             csv_file="inspection_bayarea_incremental.csv",
             checkpoint_file="inspection_bayarea_checkpoint.json",
-            max_pages=1,
+            max_pages=config.inspection_bayarea_max_pages,
         )
         return 0
 

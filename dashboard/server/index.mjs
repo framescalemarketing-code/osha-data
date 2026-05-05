@@ -1,37 +1,28 @@
-import express from "express";
+﻿import express from "express";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fetchLeadsCached as fetchHostedLeadsCached } from "../api/_lib/bq.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dashboardRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(dashboardRoot, "..");
-const bqCommand = "bq";
 const runtimeDir = path.resolve(dashboardRoot, ".runtime");
 const historyFile = path.resolve(runtimeDir, "pull-history.json");
 const outcomesFile = path.resolve(runtimeDir, "lead-outcomes.json");
 const leadsSnapshotFile = path.resolve(runtimeDir, "leads-cache.json");
 const port = Number(process.env.DASHBOARD_API_PORT || 8787);
 const LEADS_CACHE_TTL_MS = 45_000;
-const BAY_AREA_ANCHOR_LAT = 37.6776;
-const BAY_AREA_ANCHOR_LON = -122.1297;
-const BAY_AREA_RADIUS_MILES = 50;
-// 6780 Miramar Rd, San Diego, CA 92121
-const SAN_DIEGO_ANCHOR_LAT = 32.8730;
-const SAN_DIEGO_ANCHOR_LON = -117.1604;
-const SAN_DIEGO_RADIUS_MILES = 50;
 const app = express();
 app.use(express.json());
 
 let currentPull = null;
 let runtimeEnvCache = null;
-let leadsCache = {
-  leads: [],
-  generatedAt: null,
-  totalAvailable: null,
-  cacheUntil: 0,
+const leadsCacheByMode = {
+  primary: { leads: [], generatedAt: null, totalAvailable: null, cacheUntil: 0 },
+  secondary: { leads: [], generatedAt: null, totalAvailable: null, cacheUntil: 0 },
 };
 
 function parseDotEnv(rawText) {
@@ -113,6 +104,9 @@ async function resolveServiceAccountPath(runtimeEnv) {
     runtimeEnv.GOOGLE_APPLICATION_CREDENTIALS,
     runtimeEnv.BIGQUERY_SERVICE_ACCOUNT_KEY_PATH,
     runtimeEnv.BIGQUERY_SERVICE_ACCOUNT_KEY_FILE,
+    path.resolve(dashboardRoot, "bq-service-account.json"),
+    path.resolve(repoRoot, "bq-service-account.json"),
+    path.resolve(runtimeDir, "gcp-service-account.json"),
   ];
   const legacyValue = runtimeEnv.BigQuery_Service_Account_Key;
   if (legacyValue && !isInlineJson(legacyValue) && !maybeDecodeBase64Json(legacyValue)) {
@@ -250,392 +244,8 @@ async function writeLeadsSnapshot(leads, generatedAt, totalAvailable = null) {
   );
 }
 
-function normalizeCodes(rawStandards) {
-  if (!rawStandards) {
-    return [];
-  }
-
-  const tokens = String(rawStandards)
-    .split("|")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const codeRegex = /\b\d{4}\.\d+(?:\([^)]+\))*\b/g;
-  const codes = [];
-  for (const token of tokens) {
-    const matches = token.match(codeRegex);
-    if (matches) {
-      for (const code of matches) {
-        if (!codes.includes(code)) {
-          codes.push(code);
-        }
-      }
-    }
-  }
-  return codes;
-}
-
-function inferIncidentType(row) {
-  if (String(row["lead_type"] || "").toLowerCase() === "profile_fit") {
-    return "Profile Fit";
-  }
-
-  // v3 schema: derive from new score/count fields
-  const eyeInjury = Number(row["eye_injury_count"] || 0) > 0;
-  const prescription = Number(row["prescription_violation_count"] || 0) > 0;
-  const eyeViolation = Number(row["eye_violation_count"] || 0) > 0;
-  const openViolation = Number(row["open_eye_violation_count"] || 0) > 0;
-  const generalPpe = Number(row["general_ppe_violation_count"] || 0) > 0;
-
-  if (eyeInjury) return "Severe Injury";
-  if (prescription) return "Prescription Safety";
-  if (openViolation) return "Impact Hazard";
-  if (eyeViolation) return "Impact Hazard";
-  if (generalPpe) return "General PPE";
-  return "General PPE";
-}
-
-function resolveIncidentDate(row) {
-  // v3 schema uses snake_case column names
-  if (row["last_eye_injury_date"]) {
-    return { value: row["last_eye_injury_date"], source: "accident" };
-  }
-  if (row["last_violation_event_date"]) {
-    return { value: row["last_violation_event_date"], source: "violation-event" };
-  }
-  if (row["last_violation_date"]) {
-    return { value: row["last_violation_date"], source: "violation-event" };
-  }
-  if (row["close_case_date"]) {
-    return { value: row["close_case_date"], source: "case-close" };
-  }
-  if (row["open_case_date"]) {
-    return { value: row["open_case_date"], source: "case-open" };
-  }
-  return { value: null, source: "unknown" };
-}
-
-function normalizeNaicsCode(value) {
-  const digits = String(value || "").replace(/\D/g, "");
-  return digits.length >= 2 ? digits : "";
-}
-
-function industryFromNaics(naicsCode) {
-  const code = normalizeNaicsCode(naicsCode);
-  if (!code) return "";
-
-  const exact = {
-    "211120": "Crude Petroleum Extraction",
-    "221122": "Electric Power Distribution",
-    "311615": "Poultry Processing",
-    "312120": "Breweries",
-    "324110": "Petroleum Refineries",
-    "325199": "Basic Organic Chemical Manufacturing",
-    "325412": "Pharmaceutical Preparation Manufacturing",
-    "325413": "In-Vitro Diagnostic Substance Manufacturing",
-    "325414": "Biological Product Manufacturing",
-    "325510": "Paint and Coating Manufacturing",
-    "325611": "Soap and Detergent Manufacturing",
-    "325998": "Chemical Product Manufacturing",
-    "326199": "Plastic Product Manufacturing",
-    "332710": "Machine Shops",
-    "332994": "Small Arms Manufacturing",
-    "333120": "Construction Machinery Manufacturing",
-    "333314": "Optical Instrument and Lens Manufacturing",
-    "333415": "HVAC and Commercial Refrigeration Equipment Manufacturing",
-    "334413": "Semiconductor and Related Device Manufacturing",
-    "334416": "Capacitor, Resistor, Coil, Transformer Manufacturing",
-    "334510": "Electromedical and Electrotherapeutic Apparatus Manufacturing",
-    "334516": "Analytical Laboratory Instrument Manufacturing",
-    "334519": "Measuring and Controlling Device Manufacturing",
-    "336411": "Aircraft Manufacturing",
-    "336412": "Aircraft Engine and Engine Parts Manufacturing",
-    "336413": "Other Aircraft Parts and Equipment Manufacturing",
-    "339112": "Surgical and Medical Instrument Manufacturing",
-    "339113": "Surgical Appliance and Supplies Manufacturing",
-    "423450": "Medical, Dental, and Hospital Equipment Wholesalers",
-    "493110": "General Warehousing and Storage",
-    "541380": "Testing Laboratories",
-    "541714": "Research and Development in Biotechnology",
-    "562910": "Remediation Services",
-  };
-
-  if (exact[code]) {
-    return exact[code];
-  }
-
-  const prefixRules = [
-    ["3254", "Pharmaceutical and Medicine Manufacturing"],
-    ["325", "Chemical Manufacturing"],
-    ["334", "Computer and Electronic Product Manufacturing"],
-    ["3364", "Aerospace Product and Parts Manufacturing"],
-    ["336", "Transportation Equipment Manufacturing"],
-    ["3391", "Medical Equipment and Supplies Manufacturing"],
-    ["339", "Miscellaneous Manufacturing"],
-    ["333", "Machinery Manufacturing"],
-    ["332", "Fabricated Metal Product Manufacturing"],
-    ["311", "Food Manufacturing"],
-    ["312", "Beverage and Tobacco Product Manufacturing"],
-    ["493", "Warehousing and Storage"],
-    ["5417", "Scientific Research and Development Services"],
-    ["541", "Professional, Scientific, and Technical Services"],
-    ["562", "Waste Management and Remediation Services"],
-    ["42", "Merchant Wholesalers"],
-    ["23", "Construction"],
-    ["31", "Manufacturing"],
-    ["32", "Manufacturing"],
-    ["33", "Manufacturing"],
-  ];
-
-  for (const [prefix, label] of prefixRules) {
-    if (code.startsWith(prefix)) {
-      return label;
-    }
-  }
-
-  return "";
-}
-
-function resolveIndustryLabel(row) {
-  const strategicBucket = strategicIndustryBucket(row);
-  if (strategicBucket) {
-    return strategicBucket;
-  }
-
-  const naicsLabel = industryFromNaics(row["naics_code"]);
-  if (naicsLabel) {
-    return naicsLabel;
-  }
-  return String(row["industry_segment"] || "").trim() || "Unknown Industry";
-}
-
-function strategicIndustryBucket(row) {
-  const code = normalizeNaicsCode(row["naics_code"]);
-  const segment = String(row["industry_segment"] || "").toUpperCase();
-
-  if (
-    code.startsWith("3254")
-    || code.startsWith("5417")
-    || code.startsWith("541380")
-    || /PHARMA|PHARMACEUT|BIOTECH|LABORATOR|LAB\b|RESEARCH|R&D|LIFE\s*SCIENCE/.test(segment)
-  ) {
-    return "Pharmaceuticals, Labs, and Research";
-  }
-
-  if (
-    code.startsWith("3364")
-    || /AEROSPACE|DEFENSE|DEFENCE|AIRCRAFT|AVIATION|SPACE\b/.test(segment)
-  ) {
-    return "Aerospace and Defense";
-  }
-
-  if (
-    code.startsWith("22")
-    || code.startsWith("211")
-    || code.startsWith("213")
-    || code.startsWith("32411")
-    || /ENERGY|UTILITY|UTILITIES|POWER|ELECTRIC|GAS\b|WATER|RENEWABLE|OIL\b/.test(segment)
-  ) {
-    return "Energy and Utilities";
-  }
-
-  if (
-    code.startsWith("23")
-    || /CONSTRUCTION|CONTRACTOR|BUILDING\b|ROOFING|PLUMBING|HVAC|ELECTRICAL\s+CONTRACT/.test(segment)
-  ) {
-    return "Construction";
-  }
-
-  if (
-    code.startsWith("31")
-    || code.startsWith("32")
-    || code.startsWith("33")
-    || /MANUFACTUR|PRODUCTION|FABRICATION|ASSEMBLY/.test(segment)
-  ) {
-    return "Manufacturing and Production";
-  }
-
-  return "";
-}
-
-function normalizeCaliforniaRegion(row) {
-  const state = String(row["site_state"] || "").trim().toUpperCase();
-  const city = String(row["site_city"] || "").trim().toUpperCase();
-  const rawRegion = String(row["region"] || "").trim().toUpperCase();
-
-  if (state && state !== "CA") {
-    return String(row["region"] || "Other").trim() || "Other";
-  }
-
-  // Primary: use geo_match_source which is distance-based and authoritative
-  const geoSrc = String(row["geo_match_source"] || "").toLowerCase();
-  if (geoSrc === "bay_radius") return "Northern California";
-  if (geoSrc === "san_diego_area") return "Southern California";
-  if (geoSrc === "bay_radius|san_diego_area") {
-    // Overlap edge case: assign to whichever anchor is closer
-    const bayDist = Number(row["bay_area_distance_miles"] ?? 999999);
-    const sdDist = Number(row["san_diego_distance_miles"] ?? 999999);
-    return bayDist <= sdDist ? "Northern California" : "Southern California";
-  }
-
-  // Fallback: city-based for records without geo_match_source
-  const northernCitiesFallback = new Set([
-    "SAN FRANCISCO", "OAKLAND", "BERKELEY", "RICHMOND", "SAN JOSE", "FREMONT",
-    "PALO ALTO", "MOUNTAIN VIEW", "SUNNYVALE", "REDWOOD CITY", "SAN MATEO",
-    "MENLO PARK", "BURLINGAME", "SOUTH SAN FRANCISCO", "SANTA CLARA",
-    "WALNUT CREEK", "CONCORD", "ANTIOCH", "PITTSBURG", "BRENTWOOD",
-    "LIVERMORE", "HAYWARD", "SAN LEANDRO", "SAN LORENZO",
-  ]);
-  const southernCitiesFallback = new Set([
-    "SAN DIEGO", "CHULA VISTA", "EL CAJON", "SANTEE", "LA MESA",
-    "NATIONAL CITY", "IMPERIAL BEACH", "CORONADO", "POWAY", "ESCONDIDO",
-    "VISTA", "OCEANSIDE", "CARLSBAD", "SAN MARCOS", "ENCINITAS", "DEL MAR",
-    "LOS ANGELES", "LONG BEACH", "ANAHEIM", "IRVINE", "SANTA ANA",
-    "RIVERSIDE", "SAN BERNARDINO",
-  ]);
-
-  if (northernCitiesFallback.has(city)) return "Northern California";
-  if (southernCitiesFallback.has(city)) return "Southern California";
-
-  if (rawRegion.includes("BAY") || rawRegion.includes("NORTH")) return "Northern California";
-  if (rawRegion.includes("LOS ANGELES") || rawRegion.includes("SOUTH") || rawRegion.includes("SAN DIEGO")) return "Southern California";
-
-  return "Northern California";
-}
-
-function toLeadRecord(row) {
-  const incidentDateInfo = resolveIncidentDate(row);
-  const incidentDateIso = incidentDateInfo.value
-    ? String(incidentDateInfo.value).slice(0, 10)
-    : "";
-  const now = Date.now();
-  const lastTouchedDays = incidentDateIso
-    ? Math.max(0, Math.floor((now - new Date(`${incidentDateIso}T00:00:00Z`).getTime()) / 86400000))
-    : 0;
-
-  const tier = row["lead_tier"] || "P3 Industry Fit";
-  const leadType = String(row["lead_type"] || (row["inspection_id"] ? "incident" : "profile_fit"));
-  const finalScore = Number(row["final_score"] || 0);
-  const isCityLicenseLead = !row["inspection_id"];
-
-  // Map lead tier to legacy priority / action labels
-  const priorityMap = {
-    "P0 Hot Eye":       "P0 Ideal",
-    "P1 Eye Violation": "P1 Active",
-    "P2 PPE Opportunity": "P2 Research",
-    "P3 Industry Fit":  "P3 Monitor",
-  };
-  const actionMap = {
-    "P0 Hot Eye":       "Ideal Call Now",
-    "P1 Eye Violation": "Call Now",
-    "P2 PPE Opportunity": finalScore >= 30 ? "Call This Week" : "Research Then Call",
-    "P3 Industry Fit":  "Monitor / Nurture",
-  };
-
-  const eyeInjuryDescriptions = String(row["eye_injury_descriptions"] || "")
-    .split("|")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  const emphasisCodes = String(row["emphasis_code_list"] || "")
-    .split("|")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  return {
-    id: `lead-${row["inspection_id"] || row["account_name"] || Math.random().toString(16).slice(2)}`,
-    company: row["account_name"] || "Unknown Company",
-    region: normalizeCaliforniaRegion(row),
-    county: row["county"] || "",
-    distanceFromMiramarMiles:
-      row["san_diego_distance_miles"] != null
-        ? Number(row["san_diego_distance_miles"])
-        : (row["distance_from_miramar_miles"] != null ? Number(row["distance_from_miramar_miles"]) : null),
-    bayAreaDistanceMiles:
-      row["bay_area_distance_miles"] === null || row["bay_area_distance_miles"] === undefined
-        ? null
-        : Number(row["bay_area_distance_miles"]),
-    isWithinBayArea50Mi:
-      row["is_within_bay_area_50mi"] === true
-      || String(row["is_within_bay_area_50mi"] || "").toLowerCase() === "true",
-    isSanDiegoArea:
-      row["is_san_diego_area"] === true
-      || String(row["is_san_diego_area"] || "").toLowerCase() === "true",
-    geoMatchSource: String(row["geo_match_source"] || "none"),
-    leadType,
-    qualifiesIncident3Year:
-      row["qualifies_incident_3yr"] === true
-      || String(row["qualifies_incident_3yr"] || "").toLowerCase() === "true",
-    city: row["site_city"] || "",
-    naicsCode: normalizeNaicsCode(row["naics_code"]),
-    industry: resolveIndustryLabel(row),
-    ownerType: row["ownership_type"] || "",
-
-    // v3 scores
-    eyeLeadScore: Number(row["eye_lead_score"] || 0),
-    ppeScore: Number(row["ppe_score"] || 0),
-    finalScore,
-    leadTier: tier,
-
-    // legacy compat fields for components that still reference them
-    overallSalesScore: finalScore,
-    eyewearEvidenceScore: Number(row["eye_lead_score"] || 0),
-    priority: priorityMap[tier] || "P3 Monitor",
-    action: actionMap[tier] || "Monitor / Nurture",
-
-    // v3 eye injury evidence
-    eyeInjuryCount: Number(row["eye_injury_count"] || 0),
-    fatalityCount: Number(row["fatality_count"] || 0),
-    faceHeadInjuryCount: Number(row["face_head_injury_count"] || 0),
-    eyeInjuryDescriptions,
-
-    // v3 violation evidence
-    eyeViolationCount: Number(row["eye_violation_count"] || 0),
-    prescriptionViolationCount: Number(row["prescription_violation_count"] || 0),
-    openEyeViolationCount: Number(row["open_eye_violation_count"] || 0),
-    generalPpeViolationCount: Number(row["general_ppe_violation_count"] || 0),
-    openGeneralPpeViolationCount: Number(row["open_general_ppe_violation_count"] || 0),
-    willfulViolationCount: Number(row["willful_violation_count"] || 0),
-    repeatViolationCount: Number(row["repeat_violation_count"] || 0),
-    totalCurrentPenalty: Number(row["total_current_penalty"] || 0),
-
-    // v3 enrichment signals
-    violationEventCount: Number(row["violation_event_count"] || 0),
-    contestedViolationCount: Number(row["contested_violation_count"] || 0),
-    eyeEmphasisCount: Number(row["eye_emphasis_count"] || 0),
-    emphasisCodes,
-    relatedInspectionCount: Number(row["related_inspection_count"] || 0),
-    formalFollowupCount: Number(row["formal_followup_count"] || 0),
-    totalInspectionCount: Number(row["total_inspection_count"] || 0),
-
-    rawViolationCodes: normalizeCodes(row["standards_cited"]),
-    openViolations: row["has_open_violations"] === true || String(row["has_open_violations"] || "").toLowerCase() === "true",
-
-    pitchRecommendation: row["pitch_recommendation"] || "",
-    employeeBand: row["employee_band"] || "Unknown",
-
-    // date / incident
-    incidentDate: incidentDateIso,
-    incidentDateSource: incidentDateInfo.source,
-    incidentType: inferIncidentType(row),
-    lastTouchedDays,
-    accountStatus: "New",
-
-    // v3 direct date fields
-    openCaseDate: row["open_case_date"] ? String(row["open_case_date"]).slice(0, 10) : "",
-    closeCaseDate: row["close_case_date"] ? String(row["close_case_date"]).slice(0, 10) : "",
-    lastEyeInjuryDate: row["last_eye_injury_date"] ? String(row["last_eye_injury_date"]).slice(0, 10) : "",
-
-    // legacy compat
-    needTier: tier === "P0 Hot Eye" || tier === "P1 Eye Violation" ? "Direct Need"
-      : tier === "P2 PPE Opportunity" ? "Probable Need" : "Fit Only",
-    matchedSources: isCityLicenseLead ? ["City License"] : ["OSHA"],
-    reasonToContact: row["pitch_recommendation"] || "",
-    whyNow: "",
-    recentInspectionContext: "",
-    severeIncident: Number(row["eye_injury_count"] || 0) > 0,
-  };
-}
+// Lead-row transformation lives in api/_lib/transforms.mjs for a single source of truth.
+// The local dashboard server consumes already-transformed records via hosted fetch helpers.
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -706,279 +316,75 @@ function runCommand(command, args, options = {}) {
 
 async function ensureBigQueryAuth() {
   const cfg = await loadPipelineConfig();
-  const runtimeEnv = await getRuntimeEnv();
+  await syncEnvForBigQueryClient(cfg);
   try {
-    await runCommand(
-      bqCommand,
-      [
-        `--project_id=${cfg.projectId}`,
-        "query",
-        "--nouse_legacy_sql",
-        "--max_rows=1",
-        "SELECT 1",
-      ],
-      { env: runtimeEnv, shell: true },
-    );
-    console.log("[dashboard-api] BigQuery auth check passed.");
+    await fetchHostedLeadsCached({ force: true, includeSecondary: false });
+    console.log("[dashboard-api] BigQuery client preflight passed.");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    console.warn("[dashboard-api] BigQuery auth preflight failed:", detail);
+    console.warn("[dashboard-api] BigQuery client preflight failed:", detail);
   }
 }
 
-async function fetchLiveLeads() {
+function getMode(includeSecondary) {
+  return includeSecondary ? "secondary" : "primary";
+}
+
+async function fetchLiveLeads({ includeSecondary = false } = {}) {
   const cfg = await loadPipelineConfig();
-  const fastSql = `
-WITH base AS (
-SELECT
-  inspection_id,
-  account_name,
-  region,
-  county,
-  site_city,
-  site_state,
-  site_zip,
-  distance_from_miramar_miles,
-  naics_code,
-  industry_segment,
-  ownership_type,
-  employee_band,
-  nr_employees,
-  open_case_date,
-  close_case_date,
-  last_eye_injury_date,
-  last_violation_date,
-  last_violation_event_date,
-  eye_lead_score,
-  ppe_score,
-  final_score,
-  lead_tier,
-  pitch_recommendation,
-  eye_injury_count,
-  fatality_count,
-  face_head_injury_count,
-  eye_injury_descriptions,
-  eye_violation_count,
-  prescription_violation_count,
-  side_protection_violation_count,
-  open_eye_violation_count,
-  general_ppe_violation_count,
-  open_general_ppe_violation_count,
-  willful_violation_count,
-  repeat_violation_count,
-  total_current_penalty,
-  standards_cited,
-  violation_event_count,
-  contested_violation_count,
-  eye_emphasis_count,
-  emphasis_code_list,
-  related_inspection_count,
-  formal_followup_count,
-  total_inspection_count,
-  has_open_violations
-FROM \`${cfg.projectId}.${cfg.dataset}.dashboard_leads_current\`
-),
-geo_enriched AS (
-  SELECT
-    b.*,
-    ROUND(
-      SAFE_DIVIDE(
-        ST_DISTANCE(
-          zg.internal_point_geom,
-          ST_GEOGPOINT(${BAY_AREA_ANCHOR_LON}, ${BAY_AREA_ANCHOR_LAT})
-        ),
-        1609.344
-      ),
-      1
-    ) AS bay_area_distance_miles,
-    ROUND(
-      SAFE_DIVIDE(
-        ST_DISTANCE(
-          zg.internal_point_geom,
-          ST_GEOGPOINT(${SAN_DIEGO_ANCHOR_LON}, ${SAN_DIEGO_ANCHOR_LAT})
-        ),
-        1609.344
-      ),
-      1
-    ) AS san_diego_distance_miles
-  FROM base b
-  LEFT JOIN \`bigquery-public-data.geo_us_boundaries.zip_codes\` zg
-    ON zg.zip_code = LPAD(REGEXP_EXTRACT(COALESCE(b.site_zip, ''), r'(\\d{5})'), 5, '0')
-),
-eligible_geo AS (
-  SELECT
-    ge.*,
-    (COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}) AS is_within_bay_area_50mi,
-    (COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}) AS is_san_diego_area,
-    CASE
-      WHEN COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}
-           AND COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}
-        THEN 'bay_radius|san_diego_area'
-      WHEN COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}
-        THEN 'bay_radius'
-      WHEN COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}
-        THEN 'san_diego_area'
-      ELSE 'none'
-    END AS geo_match_source
-  FROM geo_enriched ge
-  WHERE
-    UPPER(TRIM(COALESCE(ge.site_state, ''))) = 'CA'
-    AND (
-      COALESCE(ge.bay_area_distance_miles, 999999) <= ${BAY_AREA_RADIUS_MILES}
-      OR COALESCE(ge.san_diego_distance_miles, 999999) <= ${SAN_DIEGO_RADIUS_MILES}
-    )
-),
-classified AS (
-  SELECT
-    eg.*,
-    IFNULL((
-      (
-        COALESCE(eg.eye_injury_count, 0) > 0
-        OR COALESCE(eg.face_head_injury_count, 0) > 0
-        OR COALESCE(eg.eye_violation_count, 0) > 0
-        OR COALESCE(eg.prescription_violation_count, 0) > 0
-        OR COALESCE(eg.open_eye_violation_count, 0) > 0
-        OR COALESCE(eg.general_ppe_violation_count, 0) > 0
-        OR COALESCE(eg.open_general_ppe_violation_count, 0) > 0
-      )
-      AND COALESCE(eg.last_eye_injury_date, eg.last_violation_event_date, eg.last_violation_date)
-        >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 YEAR)
-    ), FALSE) AS qualifies_incident_3yr
-  FROM eligible_geo eg
-),
-all_valid AS (
-  -- All geo-eligible companies with a real account name
-  SELECT
-    *,
-    CASE WHEN qualifies_incident_3yr THEN 'incident' ELSE 'profile_fit' END AS lead_type
-  FROM classified
-  WHERE UPPER(TRIM(COALESCE(account_name, ''))) NOT IN ('', 'NA', 'N/A', 'UNKNOWN', 'NONE', 'NULL')
-    -- Suppress obvious consumer/retail storefronts before rendering dashboard leads.
-    AND NOT REGEXP_CONTAINS(UPPER(COALESCE(account_name, '')), r'\\b(LLC\\s+DBA|DBA\\s+|SALON|BARBERSHOP|BARBER|NAIL|SPA|BOUTIQUE|RESTAURANT|CAFE|COFFEE|PIZZA|TAQUERIA|DELI|BAKERY|DONUT|YOGA|FITNESS|GYM|SMOKE\\s*SHOP|VAPE|CONVENIENCE|GROCERY|MARKET|LIQUOR|PHARMACY|OPTICAL\\s+SHOP|EYEWEAR\\s+SHOP|PET\\s+GROOMING|AUTO\\s+DETAIL|CAR\\s+WASH)\\b')
-    AND NOT REGEXP_CONTAINS(UPPER(COALESCE(industry_segment, '')), r'\\b(RETAIL|FOOD\\s+SERVICE|RESTAURANT|ACCOMMODATION|PERSONAL\\s+CARE|BEAUTY|SALON|BARBER|CONSUMER|HOSPITALITY)\\b')
-    AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '44')
-    AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '45')
-    AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '72')
-    -- Keep only target B2B sectors: pharma/labs/research, aerospace/defense,
-    -- energy/utilities, construction, and manufacturing/production.
-    AND (
-      REGEXP_CONTAINS(
-        UPPER(COALESCE(industry_segment, '')),
-        r'\\b(PHARMA|PHARMACEUT|BIOTECH|LIFE\\s*SCIENCE|LAB|LABORATOR|RESEARCH|AEROSPACE|DEFENSE|DEFENCE|AVIATION|SPACE|ENERGY|UTILITY|UTILITIES|POWER|ELECTRIC|OIL|GAS|CONSTRUCTION|CONTRACTOR|MANUFACTUR|PRODUCTION|FABRICATION|ASSEMBLY)\\b'
-      )
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '21')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '22')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '23')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '31')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '32')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '33')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '3254')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '3364')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '5417')
-      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '541380')
-    )
-),
-deduped AS (
-  -- Keep highest-scoring record per normalized company name
-  SELECT * EXCEPT(rn)
-  FROM (
-    SELECT
-      av.*,
-      ROW_NUMBER() OVER (
-        PARTITION BY REGEXP_REPLACE(UPPER(COALESCE(av.account_name, '')), r'[^A-Z0-9]', '')
-        ORDER BY
-          IF(av.qualifies_incident_3yr, 0, 1) ASC,
-          av.final_score DESC
-      ) AS rn
-    FROM all_valid av
-  )
-  WHERE rn = 1
-)
-SELECT *
-FROM deduped
-ORDER BY
-  -- Incident leads (3-yr PPE/eye evidence) always rank above profile-fit
-  IF(qualifies_incident_3yr, 0, 1) ASC,
-  -- Within incident leads: by tier then score
-  CASE lead_tier
-    WHEN 'P0 Hot Eye'        THEN 0
-    WHEN 'P1 Eye Violation'  THEN 1
-    WHEN 'P2 PPE Opportunity' THEN 2
-    ELSE 3
-  END ASC,
-  final_score DESC,
-  IF(has_open_violations, 1, 0) DESC
-LIMIT 600
-`;
-  const runtimeEnv = await getRuntimeEnv();
-
-  const executeSql = async (sqlText) => {
-    return runCommand(bqCommand, [
-      `--project_id=${cfg.projectId}`,
-      "query",
-      "--use_legacy_sql=false",
-      "--format=prettyjson",
-      "--max_rows=600",
-    ], { env: runtimeEnv, timeoutMs: 180000, shell: true, input: sqlText });
-  };
-
-  const rawJson = await executeSql(fastSql);
-  const rows = JSON.parse(rawJson);
-  const records = rows.map(toLeadRecord);
-  // Safety-net dedup: one record per normalized company name (SQL dedup handles location priority).
-  const seen = new Set();
-  return records.filter((r) => {
-    const key = (r.company || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  await syncEnvForBigQueryClient(cfg);
+  const payload = await fetchHostedLeadsCached({ force: true, includeSecondary });
+  return Array.isArray(payload?.leads) ? payload.leads : [];
 }
 
 async function fetchLiveLeadTableCount() {
   const cfg = await loadPipelineConfig();
-  const runtimeEnv = await getRuntimeEnv();
-  const countSql = `
-SELECT COUNT(*) AS total_rows
-FROM \`${cfg.projectId}.${cfg.dataset}.dashboard_leads_current\`
-`;
-
-  const rawJson = await runCommand(bqCommand, [
-    `--project_id=${cfg.projectId}`,
-    "query",
-    "--use_legacy_sql=false",
-    "--format=prettyjson",
-  ], { env: runtimeEnv, timeoutMs: 60000, shell: true, input: countSql });
-
-  const rows = JSON.parse(rawJson);
-  const total = Number(rows?.[0]?.total_rows ?? 0);
+  await syncEnvForBigQueryClient(cfg);
+  const payload = await fetchHostedLeadsCached({ force: false, includeSecondary: false });
+  const total = Number(payload?.totalAvailable ?? 0);
   return Number.isFinite(total) ? total : 0;
 }
 
-async function fetchLiveLeadsCached({ force = false } = {}) {
+async function syncEnvForBigQueryClient(cfg) {
+  const runtimeEnv = await getRuntimeEnv();
+  for (const [key, value] of Object.entries(runtimeEnv)) {
+    if (process.env[key] == null || process.env[key] === "") {
+      process.env[key] = value;
+    }
+  }
+  process.env.PROJECT_ID = cfg.projectId;
+  process.env.BQ_DATASET = cfg.dataset;
+  process.env.ENABLE_LEAD_TABLE_COUNT = "1";
+}
+
+async function fetchLiveLeadsCached({ force = false, includeSecondary = false } = {}) {
+  const mode = getMode(includeSecondary);
+  const cache = leadsCacheByMode[mode];
   const now = Date.now();
-  if (!force && leadsCache.generatedAt && now < leadsCache.cacheUntil) {
+  if (!force && cache.generatedAt && now < cache.cacheUntil) {
     return {
-      leads: leadsCache.leads,
-      generatedAt: leadsCache.generatedAt,
-      totalAvailable: leadsCache.totalAvailable,
+      leads: cache.leads,
+      generatedAt: cache.generatedAt,
+      totalAvailable: cache.totalAvailable,
       cacheHit: true,
     };
   }
 
   try {
     const [leads, totalAvailable] = await Promise.all([
-      fetchLiveLeads(),
+      fetchLiveLeads({ includeSecondary }),
       fetchLiveLeadTableCount().catch(() => null),
     ]);
     const generatedAt = new Date().toISOString();
-    leadsCache = {
+    leadsCacheByMode[mode] = {
       leads,
       generatedAt,
       totalAvailable,
       cacheUntil: Date.now() + LEADS_CACHE_TTL_MS,
     };
-    await writeLeadsSnapshot(leads, generatedAt, totalAvailable);
+    if (!includeSecondary) {
+      await writeLeadsSnapshot(leads, generatedAt, totalAvailable);
+    }
     return {
       leads,
       generatedAt,
@@ -989,11 +395,11 @@ async function fetchLiveLeadsCached({ force = false } = {}) {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.warn("[dashboard-api] live lead fetch failed; using stale cache:", detail);
-    if (leadsCache.leads.length > 0 && leadsCache.generatedAt) {
+    if (cache.leads.length > 0 && cache.generatedAt) {
       return {
-        leads: leadsCache.leads,
-        generatedAt: leadsCache.generatedAt,
-        totalAvailable: leadsCache.totalAvailable,
+        leads: cache.leads,
+        generatedAt: cache.generatedAt,
+        totalAvailable: cache.totalAvailable,
         cacheHit: true,
         stale: true,
       };
@@ -1002,8 +408,8 @@ async function fetchLiveLeadsCached({ force = false } = {}) {
   }
 }
 
-function warmLeadsCacheInBackground() {
-  fetchLiveLeadsCached({ force: true }).catch((error) => {
+function warmLeadsCacheInBackground({ includeSecondary = false } = {}) {
+  fetchLiveLeadsCached({ force: true, includeSecondary }).catch((error) => {
     const detail = error instanceof Error ? error.message : String(error);
     console.warn("[dashboard-api] background lead cache warmup failed:", detail);
   });
@@ -1019,7 +425,8 @@ async function appendHistory(entry) {
 app.get("/api/leads", async (req, res) => {
   try {
     const force = String(req.query.force || "").trim() === "1";
-    const leadPayload = await fetchLiveLeadsCached({ force });
+    const includeSecondary = String(req.query.includeSecondary || "").trim() === "1";
+    const leadPayload = await fetchLiveLeadsCached({ force, includeSecondary });
     const outcomes = await readOutcomes();
     const mergedLeads = leadPayload.leads.map((lead) => {
       const outcome = outcomes[lead.id] || {};
@@ -1038,6 +445,7 @@ app.get("/api/leads", async (req, res) => {
       totalAvailable: leadPayload.totalAvailable,
       generatedAt: leadPayload.generatedAt,
       cacheHit: leadPayload.cacheHit,
+      includeSecondary,
       stale: !!leadPayload.stale,
       leads: mergedLeads,
     });
@@ -1112,7 +520,7 @@ app.get("/api/pull-history", async (_req, res) => {
   });
 });
 
-// Bad leads endpoint — logged to a local JSON file for durable storage
+// Bad leads endpoint â€” logged to a local JSON file for durable storage
 const badLeadsFile = path.resolve(runtimeDir, "bad-leads.json");
 
 async function readBadLeads() {
@@ -1348,7 +756,7 @@ app.listen(port, () => {
       if (!snapshot) {
         return;
       }
-      leadsCache = {
+      leadsCacheByMode.primary = {
         leads: snapshot.leads,
         generatedAt: snapshot.generatedAt,
         totalAvailable: snapshot.totalAvailable,
@@ -1359,3 +767,4 @@ app.listen(port, () => {
       warmLeadsCacheInBackground();
     });
 });
+

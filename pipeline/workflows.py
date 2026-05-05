@@ -236,7 +236,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         table="inspection_california_incremental",
         csv_file="inspection_california_incremental.csv",
         checkpoint_file="inspection_california_checkpoint.json",
-        max_pages=2,
+        max_pages=config.inspection_california_max_pages,
     )
 
     logging.info("Stage 2/9: Ingest SoCal inspection.")
@@ -247,7 +247,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         table="inspection_socal_incremental",
         csv_file="inspection_socal_incremental.csv",
         checkpoint_file="inspection_checkpoint.json",
-        max_pages=1,
+        max_pages=config.inspection_socal_max_pages,
     )
 
     logging.info("Stage 3/9: Ingest Bay Area inspection.")
@@ -258,7 +258,7 @@ def run_full_pipeline(config: PipelineConfig, client: DolApiClient) -> None:
         table="inspection_bayarea_incremental",
         csv_file="inspection_bayarea_incremental.csv",
         checkpoint_file="inspection_bayarea_checkpoint.json",
-        max_pages=1,
+        max_pages=config.inspection_bayarea_max_pages,
     )
 
     logging.info("Stage 4/9: Ingest enrichment endpoints and refresh sales outputs.")

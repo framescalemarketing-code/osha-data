@@ -519,7 +519,28 @@ WITH osha_leads AS (
     co_related_inspection_count          AS related_inspection_count,
     formal_followup_count,
     co_inspection_count                  AS total_inspection_count,
-    IF(co_open_eye_violation_count > 0 OR co_open_general_ppe_violation_count > 0, TRUE, FALSE) AS has_open_violations
+    IF(co_open_eye_violation_count > 0 OR co_open_general_ppe_violation_count > 0, TRUE, FALSE) AS has_open_violations,
+    CASE
+      WHEN (
+        (
+          COALESCE(co_eye_injury_count, 0) > 0
+          OR COALESCE(co_face_head_injury_count, 0) > 0
+          OR COALESCE(co_eye_violation_count, 0) > 0
+          OR COALESCE(co_prescription_violation_count, 0) > 0
+          OR COALESCE(co_open_eye_violation_count, 0) > 0
+          OR COALESCE(co_general_ppe_violation_count, 0) > 0
+          OR COALESCE(co_open_general_ppe_violation_count, 0) > 0
+        )
+        AND COALESCE(last_eye_injury_date, last_violation_event_date, last_violation_date)
+          >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 YEAR)
+      ) THEN 'osha_incident'
+      ELSE 'osha_profile'
+    END                                 AS lead_source_type,
+    CAST(NULL AS STRING)                AS company_domain,
+    CAST(NULL AS STRING)                AS website,
+    CAST(0 AS INT64)                    AS contactability_score,
+    'unresearched'                      AS contact_research_status,
+    CAST('' AS STRING)                  AS contact_research_notes
   FROM company_scored_v3
   -- One record per company (by normalized name) — keep highest-scoring location.
   QUALIFY ROW_NUMBER() OVER (
@@ -658,7 +679,13 @@ city_leads AS (
     CAST(0 AS INT64)                      AS related_inspection_count,
     CAST(0 AS INT64)                      AS formal_followup_count,
     CAST(0 AS INT64)                      AS total_inspection_count,
-    FALSE                                 AS has_open_violations
+    FALSE                                 AS has_open_violations,
+    'city_license'                        AS lead_source_type,
+    CAST(NULL AS STRING)                  AS company_domain,
+    CAST(NULL AS STRING)                  AS website,
+    CAST(0 AS INT64)                      AS contactability_score,
+    'unresearched'                        AS contact_research_status,
+    CAST('' AS STRING)                    AS contact_research_notes
   FROM `{{CITY_PROJECT_ID}}.{{CITY_DATASET}}.city_biz_license_current` c
   WHERE COALESCE(NULLIF(TRIM(c.dba_name), ''), NULLIF(TRIM(c.business_name), '')) IS NOT NULL
     AND NOT EXISTS (

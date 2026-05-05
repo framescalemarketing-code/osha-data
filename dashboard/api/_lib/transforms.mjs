@@ -1,5 +1,6 @@
 // Shared data-transformation helpers for Vercel API functions.
 // Logic extracted from server/index.mjs — keep in sync if the server version changes.
+import { enrichCompanyLead } from "./contact_enrichment.mjs";
 
 export function normalizeCodes(rawStandards) {
   if (!rawStandards) return [];
@@ -224,9 +225,14 @@ export function toLeadRecord(row) {
     : 0;
 
   const tier = row["lead_tier"] || "P3 Industry Fit";
-  const leadType = String(row["lead_type"] || (row["inspection_id"] ? "incident" : "profile_fit"));
+  const leadSourceType = String(row["lead_source_type"] || (row["inspection_id"] ? "osha_profile" : "city_license"));
+  const leadType = String(
+    row["lead_type"]
+    || (leadSourceType === "city_license" ? "profile_fit" : leadSourceType === "osha_incident" ? "incident" : "profile_fit"),
+  );
   const finalScore = Number(row["final_score"] || 0);
-  const isCityLicenseLead = !row["inspection_id"];
+  const isCityLicenseLead = leadSourceType === "city_license" || !row["inspection_id"];
+  const contactability = enrichCompanyLead(row);
 
   const priorityMap = {
     "P0 Hot Eye": "P0 Ideal",
@@ -264,6 +270,8 @@ export function toLeadRecord(row) {
       row["is_san_diego_area"] === true
       || String(row["is_san_diego_area"] || "").toLowerCase() === "true",
     geoMatchSource: String(row["geo_match_source"] || "none"),
+    leadSourceType,
+    lead_source_type: leadSourceType,
     leadType,
     qualifiesIncident3Year:
       row["qualifies_incident_3yr"] === true
@@ -312,6 +320,15 @@ export function toLeadRecord(row) {
 
     pitchRecommendation: row["pitch_recommendation"] || "",
     employeeBand: row["employee_band"] || "Unknown",
+    companyDomain: contactability.companyDomain,
+    company_domain: contactability.companyDomain,
+    website: contactability.website,
+    contactabilityScore: contactability.contactabilityScore,
+    contactability_score: contactability.contactabilityScore,
+    contactResearchStatus: contactability.contactResearchStatus,
+    contact_research_status: contactability.contactResearchStatus,
+    contactResearchNotes: contactability.contactResearchNotes,
+    contact_research_notes: contactability.contactResearchNotes,
 
     incidentDate: incidentDateIso,
     incidentDateSource: incidentDateInfo.source,

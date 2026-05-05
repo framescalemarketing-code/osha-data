@@ -24,6 +24,7 @@ export type IncidentType =
 
 export type LeadType = "incident" | "profile_fit";
 export type GeoMatchSource = "bay_radius" | "san_diego_area" | "bay_radius|san_diego_area" | "none";
+export type LeadSourceType = "osha_incident" | "osha_profile" | "city_license";
 
 export type IncidentDateSource =
   | "accident"
@@ -49,6 +50,7 @@ export type LeadRecord = {
   isWithinBayArea50Mi?: boolean;
   isSanDiegoArea?: boolean;
   geoMatchSource?: GeoMatchSource;
+  leadSourceType?: LeadSourceType;
   leadType?: LeadType;
   qualifiesIncident3Year?: boolean;
   city: string;
@@ -99,6 +101,11 @@ export type LeadRecord = {
   // company info
   naicsCode?: string;
   employeeBand: string;
+  companyDomain?: string;
+  website?: string;
+  contactabilityScore?: number;
+  contactResearchStatus?: string;
+  contactResearchNotes?: string;
 
   // dates
   incidentDate: string;

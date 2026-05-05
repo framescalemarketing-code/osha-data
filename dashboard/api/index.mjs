@@ -27,7 +27,8 @@ const PIPELINE_UNAVAILABLE = {
 app.get("/api/leads", async (req, res) => {
   try {
     const force = String(req.query?.force || "").trim() === "1";
-    const payload = await fetchLeadsCached({ force });
+    const includeSecondary = String(req.query?.includeSecondary || "").trim() === "1";
+    const payload = await fetchLeadsCached({ force, includeSecondary });
     const mergedLeads = payload.leads.map((lead) => {
       const outcome = outcomes[lead.id] || {};
       return {
@@ -44,6 +45,7 @@ app.get("/api/leads", async (req, res) => {
       totalAvailable: payload.totalAvailable,
       generatedAt: payload.generatedAt,
       cacheHit: payload.cacheHit,
+      includeSecondary,
       stale: false,
       leads: mergedLeads,
     });

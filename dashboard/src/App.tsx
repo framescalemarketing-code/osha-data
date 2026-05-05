@@ -54,7 +54,6 @@ import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import SourceRoundedIcon from "@mui/icons-material/SourceRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
-import { leads as fallbackLeads } from "./data";
 import { toViolationDetails } from "./oshaStandards";
 import type { DashboardSettings, IncidentDateSource, IncidentType, LeadRecord, LeadTier, NavView } from "./types";
 
@@ -89,10 +88,10 @@ type PullHistoryItem = {
 const navItems: Array<{ view: NavView; label: string; icon: React.ReactNode }> = [
   { view: "overview", label: "Overview", icon: <AssessmentRoundedIcon /> },
   { view: "lead-queue", label: "Lead Queue", icon: <FilterAltRoundedIcon /> },
-  { view: "hot-eye-leads", label: "Hot Eye Leads", icon: <LocalFireDepartmentRoundedIcon /> },
-  { view: "ppe-opportunity", label: "PPE Opportunity", icon: <FlagRoundedIcon /> },
-  { view: "source-signals", label: "Source Signals", icon: <SourceRoundedIcon /> },
-  { view: "settings", label: "Settings", icon: <SettingsRoundedIcon /> },
+  { view: "hot-eye-leads", label: "Hot Leads", icon: <LocalFireDepartmentRoundedIcon /> },
+  { view: "ppe-opportunity", label: "Research Queue", icon: <FlagRoundedIcon /> },
+  { view: "source-signals", label: "Signals + Contact Intel", icon: <SourceRoundedIcon /> },
+  { view: "settings", label: "Pipeline Controls", icon: <SettingsRoundedIcon /> },
 ];
 
 const incidentOptions: IncidentType[] = [
@@ -111,6 +110,13 @@ const CONTACT_READY_ACTIONS: LeadRecord["action"][] = [
   "Call Now",
   "Call This Week",
 ];
+const STRATEGIC_INDUSTRIES = [
+  "Manufacturing and Production",
+  "Aerospace and Defense",
+  "Pharmaceuticals, Labs, and Research",
+  "Energy and Utilities",
+  "Construction",
+] as const;
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const DEFAULT_PAGE_SIZE = 25;
@@ -581,17 +587,22 @@ function getPreferredDistanceMiles(lead: LeadRecord): number {
 }
 
 function compareLeadsForQueue(a: LeadRecord, b: LeadRecord): number {
-  const incidentDiff = Number(Boolean(b.qualifiesIncident3Year)) - Number(Boolean(a.qualifiesIncident3Year));
-  if (incidentDiff !== 0) return incidentDiff;
+  // Primary: higher ranking score first.
+  const scoreA = Number(a.finalScore ?? a.overallSalesScore ?? 0);
+  const scoreB = Number(b.finalScore ?? b.overallSalesScore ?? 0);
+  const scoreDiff = scoreB - scoreA;
+  if (scoreDiff !== 0) return scoreDiff;
 
+  // Tie-breaker: closer to the relevant anchor (Bay vs SD) first.
+  const distanceDiff = getPreferredDistanceMiles(a) - getPreferredDistanceMiles(b);
+  if (distanceDiff !== 0) return distanceDiff;
+
+  // Secondary deterministic tie-breakers.
   const tierDiff = getTierRankForLead(a) - getTierRankForLead(b);
   if (tierDiff !== 0) return tierDiff;
 
-  const scoreDiff = (b.finalScore || 0) - (a.finalScore || 0);
-  if (scoreDiff !== 0) return scoreDiff;
-
-  const distanceDiff = getPreferredDistanceMiles(a) - getPreferredDistanceMiles(b);
-  if (distanceDiff !== 0) return distanceDiff;
+  const incidentDiff = Number(Boolean(b.qualifiesIncident3Year)) - Number(Boolean(a.qualifiesIncident3Year));
+  if (incidentDiff !== 0) return incidentDiff;
 
   return a.company.localeCompare(b.company);
 }
@@ -1059,9 +1070,13 @@ export default function App() {
   const [leadTypeFilter, setLeadTypeFilter] = React.useState("All");
   const [geoMatchFilter, setGeoMatchFilter] = React.useState("All");
   const [industryFilter, setIndustryFilter] = React.useState("All");
+  const [leadSignalsSearch, setLeadSignalsSearch] = React.useState("");
+  const [contactResearchSearch, setContactResearchSearch] = React.useState("");
   const [settings, setSettings] = React.useState(initialSettings);
   const [liveLeads, setLiveLeads] = React.useState<LeadRecord[]>([]);
   const [totalAvailableLeads, setTotalAvailableLeads] = React.useState<number | null>(null);
+  const [leadsGeneratedAt, setLeadsGeneratedAt] = React.useState<string | null>(null);
+  const [leadDataStale, setLeadDataStale] = React.useState(false);
   const [loadingLeads, setLoadingLeads] = React.useState(true);
   const [leadLoadError, setLeadLoadError] = React.useState<string | null>(null);
   const [pullStatus, setPullStatus] = React.useState<PullStatus | null>(null);
@@ -1112,11 +1127,15 @@ export default function App() {
       const withLocal = applyLocalOutcomes(payload.leads || [], loadOutcomes());
       setLiveLeads(withLocal);
       setTotalAvailableLeads(Number.isFinite(Number(payload.totalAvailable)) ? Number(payload.totalAvailable) : null);
+      setLeadsGeneratedAt(typeof payload.generatedAt === "string" ? payload.generatedAt : null);
+      setLeadDataStale(payload.stale === true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load leads";
       setLeadLoadError(message);
       setLiveLeads([]);
       setTotalAvailableLeads(null);
+      setLeadsGeneratedAt(null);
+      setLeadDataStale(false);
     } finally {
       setLoadingLeads(false);
     }
@@ -1319,8 +1338,7 @@ export default function App() {
   };
 
   const leadData = React.useMemo(() => {
-    const allLeads = liveLeads.length > 0 ? liveLeads : fallbackLeads;
-    return allLeads.filter((l) => {
+    return liveLeads.filter((l) => {
       if (badLeadIds.has(l.id)) return false;
       if (naicsRules.length > 0 && l.naicsCode) {
         for (const rule of naicsRules) {
@@ -1333,8 +1351,7 @@ export default function App() {
   }, [liveLeads, badLeadIds, naicsRules, dncKeys]);
 
   const autoSuppressedCount = React.useMemo(() => {
-    const allLeads = liveLeads.length > 0 ? liveLeads : fallbackLeads;
-    return allLeads.filter((l) => {
+    return liveLeads.filter((l) => {
       if (badLeadIds.has(l.id)) return false; // already counted as manual dismiss
       if (naicsRules.length > 0 && l.naicsCode) {
         for (const rule of naicsRules) {
@@ -1350,10 +1367,27 @@ export default function App() {
     [leadData],
   );
 
-  const industryOptions = React.useMemo(
-    () => Array.from(new Set(leadData.map((lead) => lead.industry).filter(Boolean))).sort(),
-    [leadData],
-  );
+  const industryCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const lead of leadData) {
+      const key = String(lead.industry || "").trim();
+      if (!key) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }, [leadData]);
+
+  const industryOptions = React.useMemo(() => {
+    const strategic = STRATEGIC_INDUSTRIES.map((name) => ({
+      name,
+      count: industryCounts.get(name) || 0,
+    }));
+    const remainder = Array.from(industryCounts.entries())
+      .filter(([name]) => !STRATEGIC_INDUSTRIES.includes(name as (typeof STRATEGIC_INDUSTRIES)[number]))
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name, count }));
+    return [...strategic, ...remainder];
+  }, [industryCounts]);
 
   const countyOptions = React.useMemo(
     () =>
@@ -1506,25 +1540,63 @@ export default function App() {
   const sourceSignalRows = React.useMemo(
     () => {
       if (activeView !== "source-signals") return [];
-      return visibleLeads.flatMap((lead) =>
-        lead.matchedSources.map((source) => ({
-          id: `${lead.id}-${source}`,
-          company: lead.company,
-          source,
-          region: lead.region,
-          incidentDate: lead.incidentDate,
-          incidentType: lead.incidentType,
-          codes: lead.rawViolationCodes.join(", "),
-          plainEnglish: toViolationDetails(lead.rawViolationCodes)
-            .map((item) => `${item.code}: ${item.plainEnglish}`)
-            .join(" | "),
-          score: lead.overallSalesScore,
-          note: lead.reasonToContact,
-        })),
-      );
+      return visibleLeads.map((lead) => ({
+        id: lead.id,
+        company: lead.company,
+        source: lead.leadSourceType || lead.matchedSources.join(", ") || "OSHA",
+        region: lead.region,
+        incidentDate: lead.incidentDate,
+        incidentType: lead.incidentType,
+        codes: lead.rawViolationCodes.join(", "),
+        plainEnglish: toViolationDetails(lead.rawViolationCodes)
+          .map((item) => `${item.code}: ${item.plainEnglish}`)
+          .join(" | "),
+        score: lead.overallSalesScore,
+        note: lead.reasonToContact,
+        domain: lead.companyDomain || "",
+        website: lead.website || "",
+        contactability: lead.contactabilityScore ?? 0,
+        contactStatus: lead.contactResearchStatus || "",
+        contactNotes: lead.contactResearchNotes || "",
+      }));
     },
     [activeView, visibleLeads],
   );
+
+  const filteredSourceSignalRows = React.useMemo(() => {
+    const signalNeedle = leadSignalsSearch.trim().toLowerCase();
+    const contactNeedle = contactResearchSearch.trim().toLowerCase();
+
+    return sourceSignalRows.filter((row) => {
+      const signalHaystack = [
+        row.company,
+        row.source,
+        row.region,
+        row.incidentDate,
+        row.incidentType,
+        row.codes,
+        row.plainEnglish,
+        row.note,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const contactHaystack = [
+        row.company,
+        row.domain,
+        row.website,
+        String(row.contactability ?? ""),
+        row.contactStatus,
+        row.contactNotes,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (signalNeedle && !signalHaystack.includes(signalNeedle)) return false;
+      if (contactNeedle && !contactHaystack.includes(contactNeedle)) return false;
+      return true;
+    });
+  }, [sourceSignalRows, leadSignalsSearch, contactResearchSearch]);
 
   const recentIncidents = React.useMemo(
     () =>
@@ -1850,7 +1922,12 @@ export default function App() {
         <Toolbar />
 
         <Stack spacing={3}>
-          {leadLoadError ? <Alert severity="warning">Live load issue: {leadLoadError}. Showing fallback sample data.</Alert> : null}
+          {leadLoadError ? <Alert severity="warning">Live load issue: {leadLoadError}. Showing no leads until live data is available.</Alert> : null}
+          {leadDataStale ? (
+            <Alert severity="warning">
+              Showing cached lead snapshot from {leadsGeneratedAt ? formatPullTime(leadsGeneratedAt) : "unknown time"} because live query failed.
+            </Alert>
+          ) : null}
           {loadingLeads ? <Alert severity="info">Loading live leads from BigQuery...</Alert> : null}
           {pullStatus?.status === "running" ? (
             <Alert severity="info">
@@ -1874,10 +1951,10 @@ export default function App() {
             <Typography variant="h3">
               {activeView === "overview" && "Lead Overview"}
               {activeView === "lead-queue" && "Lead Queue"}
-              {activeView === "hot-eye-leads" && "Hot Eye Leads"}
-              {activeView === "ppe-opportunity" && "PPE Opportunity"}
-              {activeView === "source-signals" && "Source Signals"}
-              {activeView === "settings" && "Settings"}
+              {activeView === "hot-eye-leads" && "Hot Leads"}
+              {activeView === "ppe-opportunity" && "Research Queue"}
+              {activeView === "source-signals" && "Signals + Contact Intel"}
+              {activeView === "settings" && "Pipeline Controls"}
             </Typography>
             <Typography sx={{ mt: 1, maxWidth: 760 }} color="text.secondary" variant="body1">
               Keep the contact decisions obvious: who is urgent, why they matter, what evidence supports the call, and
@@ -1910,6 +1987,11 @@ export default function App() {
                   <Typography variant="caption" color="text.secondary">
                     Contact-ready loaded: {contactReadyLoadedCount}
                   </Typography>
+                  {leadsGeneratedAt ? (
+                    <Typography variant="caption" color="text.secondary">
+                      Data generated: {formatPullTime(leadsGeneratedAt)}
+                    </Typography>
+                  ) : null}
                 </Stack>
                 <Stack direction="row" spacing={0.75}>
                   <Button
@@ -1995,8 +2077,10 @@ export default function App() {
                       onChange={(event) => setIndustryFilter(event.target.value)}
                     >
                       <MenuItem value="All">All industries</MenuItem>
-                      {industryOptions.map((ind) => (
-                        <MenuItem key={ind} value={ind}>{ind}</MenuItem>
+                      {industryOptions.map((opt) => (
+                        <MenuItem key={opt.name} value={opt.name}>
+                          {opt.name} ({opt.count})
+                        </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -2128,6 +2212,18 @@ export default function App() {
               </Grid>
 
               <Grid container spacing={2.5}>
+                {STRATEGIC_INDUSTRIES.map((industryName) => (
+                  <Grid key={industryName} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                    <StatCard
+                      label={industryName}
+                      value={`${industryCounts.get(industryName) || 0}`}
+                      supporting="Strategic industry leads currently in queue."
+                    />
+                  </Grid>
+                ))}
+              </Grid>
+
+              <Grid container spacing={2.5}>
                 <Grid size={{ xs: 12, lg: 7 }}>
                   <Card>
                     <CardContent>
@@ -2253,41 +2349,88 @@ export default function App() {
           {activeView === "source-signals" ? (
             <Card>
               <CardContent>
-                <Typography variant="h6">Source-backed lead evidence</Typography>
+                <Typography variant="h6">Lead Signals and Contact Research</Typography>
+                <Grid container spacing={1.5} sx={{ mt: 1 }}>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Search Lead Signals"
+                      placeholder="Company, source, incident, OSHA code, why it matters..."
+                      value={leadSignalsSearch}
+                      onChange={(event) => setLeadSignalsSearch(event.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchRoundedIcon fontSize="small" />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Search Contact Research"
+                      placeholder="Domain, website, contactability, notes..."
+                      value={contactResearchSearch}
+                      onChange={(event) => setContactResearchSearch(event.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchRoundedIcon fontSize="small" />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Grid>
+                </Grid>
                 <Table sx={{ mt: 2 }}>
                   <TableHead>
                     <TableRow>
                       <TableCell>Company</TableCell>
-                      <TableCell>Source</TableCell>
+                      <TableCell>Lead Source</TableCell>
                       <TableCell>Region</TableCell>
+                      <TableCell>Website</TableCell>
+                      <TableCell>Domain</TableCell>
+                      <TableCell>Contactability</TableCell>
                       <TableCell>Incident</TableCell>
-                      <TableCell>OSHA Codes</TableCell>
                       <TableCell>Score</TableCell>
                       <TableCell>Why it matters</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {sourceSignalRows.map((row) => (
+                    {filteredSourceSignalRows.map((row) => (
                       <TableRow key={row.id}>
                         <TableCell>{row.company}</TableCell>
                         <TableCell>{row.source}</TableCell>
                         <TableCell>{row.region}</TableCell>
+                        <TableCell>{row.website || "TBD"}</TableCell>
+                        <TableCell>{row.domain || "TBD"}</TableCell>
+                        <TableCell>{row.contactability}</TableCell>
                         <TableCell>
                           {row.incidentDate || "N/A"}
                           <br />
                           {row.incidentType}
                         </TableCell>
-                        <TableCell>
-                          {row.codes || "No code"}
-                          <br />
-                          {row.plainEnglish || "No layman mapping available"}
-                        </TableCell>
                         <TableCell>{row.score}</TableCell>
-                        <TableCell>{row.note}</TableCell>
+                        <TableCell>
+                          {row.note}
+                          <br />
+                          <Typography color="text.secondary" variant="caption">
+                            {row.codes || "No code"}
+                          </Typography>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+                {filteredSourceSignalRows.length === 0 ? (
+                  <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
+                    No signal rows match the current Lead Signals / Contact Research search.
+                  </Typography>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}
@@ -2440,7 +2583,7 @@ export default function App() {
                       </Typography>
                       <Stack spacing={1}>
                         {naicsRules.map((rule) => {
-                          const hiddenCount = (liveLeads.length > 0 ? liveLeads : fallbackLeads).filter(
+                          const hiddenCount = liveLeads.filter(
                             (l) => !badLeadIds.has(l.id) && l.naicsCode?.startsWith(rule.prefix),
                           ).length;
                           return (
