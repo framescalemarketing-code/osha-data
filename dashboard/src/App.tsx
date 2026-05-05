@@ -116,6 +116,210 @@ const DEFAULT_PAGE_SIZE = 25;
 const BAD_LEADS_STORAGE_KEY = "osha_dashboard_bad_leads_v1";
 const NAICS_RULES_STORAGE_KEY = "osha_naics_rules_v1";
 const OUTCOMES_STORAGE_KEY = "osha_dashboard_outcomes_v1";
+const NAMED_ACCOUNTS_KEY = "osha_named_accounts_v1";
+
+// ---------------------------------------------------------------------------
+// Named / known accounts — companies already in your pipeline
+// ---------------------------------------------------------------------------
+type AccountListStatus = "cold" | "warm" | "hot" | "meeting" | "not_interested" | "unqualified";
+type NamedAccountEntry = { displayName: string; status: AccountListStatus; addedAt: string };
+
+const ACCOUNT_STATUS_LABELS: Record<AccountListStatus, string> = {
+  cold: "Cold",
+  warm: "Warm",
+  hot: "Hot / Research",
+  meeting: "Meeting Scheduled",
+  not_interested: "Not Interested",
+  unqualified: "Unqualified",
+};
+
+const ACCOUNT_STATUS_COLORS: Record<AccountListStatus, "default" | "primary" | "warning" | "success" | "error" | "info"> = {
+  cold: "default",
+  warm: "warning",
+  hot: "info",
+  meeting: "success",
+  not_interested: "error",
+  unqualified: "error",
+};
+
+// Pre-seeded from sales team's account list (May 2026)
+// Keyed by normalizeCompanyKey(displayName)
+const NAMED_ACCOUNTS_SEED: Record<string, NamedAccountEntry> = (() => {
+  const seed: [string, AccountListStatus][] = [
+    // Cold
+    ["Lawrence Livermore National Laboratory", "cold"],
+    ["Lithium Americas", "cold"],
+    ["Seaworld", "cold"],
+    ["Archer Aviation", "cold"],
+    ["Maravai LifeSciences", "cold"],
+    ["ThermoFisher", "cold"],
+    ["Thermo Fisher Scientific", "cold"],
+    ["City of Escondido", "cold"],
+    ["City of Coronado", "cold"],
+    ["Exagen", "cold"],
+    ["Charles River", "cold"],
+    ["Axillon Aerospace", "cold"],
+    ["Aventus", "cold"],
+    ["Genentech", "cold"],
+    ["Qualcomm", "cold"],
+    ["Halozyme", "cold"],
+    ["Tesla", "cold"],
+    ["National Indian Gaming Commission", "cold"],
+    ["Verdiam", "cold"],
+    ["V2X Inc", "cold"],
+    ["V2X", "cold"],
+    ["ACTenviro", "cold"],
+    ["Dudek", "cold"],
+    ["UCSD", "cold"],
+    ["Takeda", "cold"],
+    ["Sangamo Therapeutics", "cold"],
+    ["BeautyHealth", "cold"],
+    ["Nitto Avecia", "cold"],
+    ["ITT Inc", "cold"],
+    ["Federal Aviation Administration", "cold"],
+    ["UPSIDE Food", "cold"],
+    ["ERM", "cold"],
+    ["Sodexo", "cold"],
+    ["Edwards Lifesciences", "cold"],
+    ["Edward Lifescience", "cold"],
+    ["TE Connectivity", "cold"],
+    ["Bechtel", "cold"],
+    // Warm
+    ["AP Precision", "warm"],
+    ["Capstone Fire Safety Management", "warm"],
+    ["Bristol Myers Squibb", "warm"],
+    ["Technical Safety Services", "warm"],
+    ["Technical Safety Service", "warm"],
+    ["DYE CNC", "warm"],
+    ["Padre Dam Municipal Water District", "warm"],
+    ["Pacific Rim Mechanical", "warm"],
+    ["Active Motif", "warm"],
+    ["Collins Aerospace", "warm"],
+    ["Eclipse Bio", "warm"],
+    ["Bachem", "warm"],
+    ["Terumo Neuro", "warm"],
+    ["Krieger Specialty Products", "warm"],
+    ["Jurupa Community Services District", "warm"],
+    // Hot / Research
+    ["CalPortland", "hot"],
+    ["Digital Building Components", "hot"],
+    // Meeting Scheduled
+    ["Rainbow OMWD", "meeting"],
+    ["Neurocrine Biosciences", "meeting"],
+    ["Automated Engineering Services", "meeting"],
+    ["Form Energy", "meeting"],
+    ["Fisica Simi Valley", "meeting"],
+    ["VLS Environmental Solutions", "meeting"],
+    // Not Interested — DO NOT CONTACT
+    ["Bio-Edge", "not_interested"],
+    ["Gilead Sciences", "not_interested"],
+    ["Amentum", "not_interested"],
+    ["Northrop Grumman", "not_interested"],
+    ["Berkeley Lab", "not_interested"],
+    ["Lawrence Berkeley National Laboratory", "not_interested"],
+    ["Qnity", "not_interested"],
+    ["Hoffmaster", "not_interested"],
+    ["ASML", "not_interested"],
+    ["PacBio", "not_interested"],
+    ["Pacific Biosciences", "not_interested"],
+    ["Apple", "not_interested"],
+    ["Sutro Biopharma", "not_interested"],
+    ["Metalfx", "not_interested"],
+    ["CBRE", "not_interested"],
+    ["Arcadias", "not_interested"],
+    ["Inhibrx", "not_interested"],
+    ["Abbott", "not_interested"],
+    ["Lam Research", "not_interested"],
+    ["Recludix Pharma", "not_interested"],
+    ["Boundless Bio", "not_interested"],
+    ["Amazon", "not_interested"],
+    ["Vera Therapeutics", "not_interested"],
+    ["Amyris", "not_interested"],
+    ["CW Services", "not_interested"],
+    ["Revolution Medicines", "not_interested"],
+    ["General Atomics", "not_interested"],
+    ["Ultragenyx", "not_interested"],
+    ["Abbvie", "not_interested"],
+    ["AbbVie", "not_interested"],
+    ["Lyten", "not_interested"],
+    ["Millennium Health", "not_interested"],
+    ["Hologic", "not_interested"],
+    ["Penumbra", "not_interested"],
+    ["Jabil", "not_interested"],
+    ["Teknova", "not_interested"],
+    ["UC San Diego", "not_interested"],
+    ["University of California San Diego", "not_interested"],
+    ["Bio-Rad Laboratories", "not_interested"],
+    ["Bio-Rad", "not_interested"],
+    ["Personalis", "not_interested"],
+    ["Veracyte", "not_interested"],
+    ["Verily", "not_interested"],
+    ["Bender CCP", "not_interested"],
+    ["Veolia North America", "not_interested"],
+    ["Veolia", "not_interested"],
+    ["Preson Infrastructure", "not_interested"],
+    ["Solar Turbines", "not_interested"],
+    ["Santier", "not_interested"],
+    ["ASLM", "not_interested"],
+    ["San Diego Padres", "not_interested"],
+    ["EMCORE Corporation", "not_interested"],
+    ["EMCORE", "not_interested"],
+    ["FairJourney Bio", "not_interested"],
+    ["Grifols", "not_interested"],
+    ["Grifol", "not_interested"],
+    ["UPSIDE Foods", "not_interested"],
+    ["Toray Membrane USA", "not_interested"],
+    ["Cemex", "not_interested"],
+    ["Baxter International", "not_interested"],
+    ["Baxter", "not_interested"],
+    ["CP Kelco", "not_interested"],
+    // Unqualified — DO NOT CONTACT
+    ["Kannegiesser", "unqualified"],
+    ["Stone Brewing", "unqualified"],
+    ["National Tech", "unqualified"],
+    ["Promach", "unqualified"],
+  ];
+  const now = new Date().toISOString();
+  const result: Record<string, NamedAccountEntry> = {};
+  for (const [displayName, status] of seed) {
+    const key = displayName.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+    result[key] = { displayName, status, addedAt: now };
+  }
+  return result;
+})();
+
+function normalizeCompanyKey(name: string): string {
+  return name.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+}
+
+function loadNamedAccounts(): Record<string, NamedAccountEntry> {
+  try {
+    const raw = localStorage.getItem(NAMED_ACCOUNTS_KEY);
+    if (!raw) {
+      // First load — write seed and return it
+      localStorage.setItem(NAMED_ACCOUNTS_KEY, JSON.stringify(NAMED_ACCOUNTS_SEED));
+      return { ...NAMED_ACCOUNTS_SEED };
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ...NAMED_ACCOUNTS_SEED };
+    }
+    // Merge seed entries that aren't already present
+    const merged = { ...parsed };
+    for (const [k, v] of Object.entries(NAMED_ACCOUNTS_SEED)) {
+      if (!merged[k]) merged[k] = v;
+    }
+    return merged;
+  } catch {
+    return { ...NAMED_ACCOUNTS_SEED };
+  }
+}
+
+function saveNamedAccounts(accounts: Record<string, NamedAccountEntry>): void {
+  try {
+    localStorage.setItem(NAMED_ACCOUNTS_KEY, JSON.stringify(accounts));
+  } catch {}
+}
 
 type BadLeadReason =
   | "wrong_industry"
@@ -734,6 +938,27 @@ function PaginationControls({ page, totalItems, pageSize, onPageChange }: Pagina
   );
 }
 
+type AccountStatusBadgeProps = { status: AccountListStatus; label?: string };
+function AccountStatusBadge({ status, label }: AccountStatusBadgeProps) {
+  const icons: Record<AccountListStatus, React.ReactNode> = {
+    cold: "❄️",
+    warm: "🔆",
+    hot: "🔥",
+    meeting: "📅",
+    not_interested: "🚫",
+    unqualified: "🚫",
+  };
+  return (
+    <Chip
+      size="small"
+      color={ACCOUNT_STATUS_COLORS[status]}
+      variant={status === "not_interested" || status === "unqualified" ? "filled" : "outlined"}
+      label={`${icons[status]} ${label ?? ACCOUNT_STATUS_LABELS[status]}`}
+      sx={{ fontWeight: 600, fontSize: "0.7rem", alignSelf: "flex-start" }}
+    />
+  );
+}
+
 function formatPullTime(isoTime?: string | null) {
   if (!isoTime) return "N/A";
   const date = new Date(isoTime);
@@ -793,6 +1018,19 @@ export default function App() {
   const [badLeads, setBadLeads] = React.useState<BadLeadEntry[]>(() => loadBadLeads());
   const badLeadIds = React.useMemo(() => new Set(badLeads.map((b) => b.leadId)), [badLeads]);
   const [badLeadDialogLead, setBadLeadDialogLead] = React.useState<LeadRecord | null>(null);
+
+  // Named / known accounts — prospect list pre-seeded from sales team
+  const [namedAccounts, setNamedAccounts] = React.useState<Record<string, NamedAccountEntry>>(() => loadNamedAccounts());
+
+  const dncKeys = React.useMemo(
+    () =>
+      new Set(
+        Object.entries(namedAccounts)
+          .filter(([, e]) => e.status === "not_interested" || e.status === "unqualified")
+          .map(([k]) => k),
+      ),
+    [namedAccounts],
+  );
   const [badLeadReason, setBadLeadReason] = React.useState<BadLeadReason>("wrong_industry");
 
   // NAICS suppression rules — auto-filter companies in the same subsector as dismissed leads
@@ -1010,6 +1248,13 @@ export default function App() {
     saveNaicsRules(updated);
   };
 
+  const onRemoveNamedAccount = (key: string) => {
+    const updated = { ...namedAccounts };
+    delete updated[key];
+    setNamedAccounts(updated);
+    saveNamedAccounts(updated);
+  };
+
   const leadData = React.useMemo(() => {
     const allLeads = liveLeads.length > 0 ? liveLeads : fallbackLeads;
     return allLeads.filter((l) => {
@@ -1019,9 +1264,10 @@ export default function App() {
           if (l.naicsCode.startsWith(rule.prefix)) return false;
         }
       }
+      if (dncKeys.size > 0 && dncKeys.has(normalizeCompanyKey(l.company))) return false;
       return true;
     });
-  }, [liveLeads, badLeadIds, naicsRules]);
+  }, [liveLeads, badLeadIds, naicsRules, dncKeys]);
 
   const autoSuppressedCount = React.useMemo(() => {
     const allLeads = liveLeads.length > 0 ? liveLeads : fallbackLeads;
@@ -1755,6 +2001,11 @@ export default function App() {
                         {hotEyeLeads.slice(0, 4).map((lead) => (
                           <Box key={lead.id}>
                             <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                            {namedAccounts[normalizeCompanyKey(lead.company)] ? (
+                              <Box sx={{ mt: 0.75, mb: 0.5 }}>
+                                <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
+                              </Box>
+                            ) : null}
                             <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
                             <Button
                               size="small"
@@ -1813,6 +2064,9 @@ export default function App() {
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                    {namedAccounts[normalizeCompanyKey(lead.company)] ? (
+                      <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
+                    ) : null}
                     <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
                     <Button
                       size="small"
@@ -1851,6 +2105,9 @@ export default function App() {
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                    {namedAccounts[normalizeCompanyKey(lead.company)] ? (
+                      <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
+                    ) : null}
                     <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
                     <Button
                       size="small"
@@ -1889,6 +2146,9 @@ export default function App() {
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }} sx={{ display: "flex" }}>
                   <Stack spacing={1.25} sx={{ width: "100%" }}>
                     <MemoLeadCard lead={lead} compact={settings.compactCards} />
+                    {namedAccounts[normalizeCompanyKey(lead.company)] ? (
+                      <AccountStatusBadge status={namedAccounts[normalizeCompanyKey(lead.company)].status} label={ACCOUNT_STATUS_LABELS[namedAccounts[normalizeCompanyKey(lead.company)].status]} />
+                    ) : null}
                     <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
                     <Button
                       size="small"
@@ -2189,6 +2449,72 @@ export default function App() {
                           );
                         })}
                       </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ) : null}
+
+              {/* Prospect List — named / known accounts */}
+              {Object.keys(namedAccounts).length > 0 ? (
+                <Grid size={{ xs: 12 }}>
+                  <Card>
+                    <CardContent>
+                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                        <Typography variant="h6">
+                          Prospect List ({Object.keys(namedAccounts).length})
+                        </Typography>
+                        <Chip
+                          label={`${dncKeys.size} DO NOT CONTACT hidden`}
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                        />
+                      </Stack>
+                      <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+                        Companies flagged from your sales pipeline. "Not Interested" and "Unqualified" are automatically hidden from all lead views. Click the undo icon to remove an entry.
+                      </Typography>
+                      {(["meeting", "hot", "warm", "cold", "not_interested", "unqualified"] as AccountListStatus[]).map((status) => {
+                        const entries = Object.entries(namedAccounts).filter(([, e]) => e.status === status);
+                        if (entries.length === 0) return null;
+                        return (
+                          <Box key={status} sx={{ mb: 2 }}>
+                            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                              <AccountStatusBadge status={status} label={`${ACCOUNT_STATUS_LABELS[status]} (${entries.length})`} />
+                            </Stack>
+                            <Stack spacing={0.5}>
+                              {entries.map(([key, entry]) => (
+                                <Box
+                                  key={key}
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 1,
+                                    borderRadius: 1.5,
+                                    border: "1px solid rgba(15,23,42,0.08)",
+                                    px: 1.5,
+                                    py: 0.75,
+                                    bgcolor:
+                                      status === "not_interested" || status === "unqualified"
+                                        ? "rgba(239,68,68,0.04)"
+                                        : status === "meeting"
+                                        ? "rgba(34,197,94,0.04)"
+                                        : "transparent",
+                                  }}
+                                >
+                                  <Typography variant="body2" sx={{ flex: 1 }}>
+                                    {entry.displayName}
+                                  </Typography>
+                                  <Tooltip title="Remove from list">
+                                    <IconButton size="small" onClick={() => onRemoveNamedAccount(key)}>
+                                      <UndoRoundedIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                              ))}
+                            </Stack>
+                          </Box>
+                        );
+                      })}
                     </CardContent>
                   </Card>
                 </Grid>
