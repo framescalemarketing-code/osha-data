@@ -116,7 +116,7 @@ deduped AS (
   FROM (
     SELECT av.*,
       ROW_NUMBER() OVER (
-        PARTITION BY UPPER(COALESCE(av.account_name, '')), COALESCE(av.site_zip, '')
+        PARTITION BY REGEXP_REPLACE(UPPER(COALESCE(av.account_name, '')), r'[^A-Z0-9]', '')
         ORDER BY IF(av.qualifies_incident_3yr, 0, 1) ASC, av.final_score DESC
       ) AS rn
     FROM all_valid av
@@ -136,10 +136,10 @@ async function fetchLiveLeads() {
   const bq = getBigQueryClient();
   const [rows] = await bq.query({ query: LEADS_SQL, useLegacySql: false });
   const records = rows.map(toLeadRecord);
-  // Safety-net dedup: keep first occurrence of each (normalized_name + zip) pair
+  // Safety-net dedup: one record per normalized company name (SQL dedup handles location priority).
   const seen = new Set();
   return records.filter((r) => {
-    const key = `${(r.company || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()}|${r.city || ''}|${r.zip || ''}`;
+    const key = (r.company || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

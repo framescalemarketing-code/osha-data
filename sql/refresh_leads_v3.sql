@@ -521,9 +521,14 @@ WITH osha_leads AS (
     co_inspection_count                  AS total_inspection_count,
     IF(co_open_eye_violation_count > 0 OR co_open_general_ppe_violation_count > 0, TRUE, FALSE) AS has_open_violations
   FROM company_scored_v3
+  -- One record per company (by normalized name) — keep highest-scoring location.
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY REGEXP_REPLACE(UPPER(company_name), r'[^A-Z0-9]', '')
+    ORDER BY final_score DESC, eye_lead_score DESC
+  ) = 1
 ),
 -- City business license leads: active hazardous-industry businesses from SF + LA
--- that do NOT already appear as OSHA-inspected companies (anti-join by name + zip).
+-- that do NOT already appear as OSHA-inspected companies (anti-join by normalized name only).
 city_leads AS (
   SELECT
     CAST(NULL AS STRING)                  AS inspection_id,
@@ -662,7 +667,7 @@ city_leads AS (
               COALESCE(NULLIF(TRIM(c.dba_name), ''), TRIM(c.business_name)),
               r'[^A-Z0-9]', ''))
             = UPPER(REGEXP_REPLACE(ol.account_name, r'[^A-Z0-9]', ''))
-        AND LEFT(TRIM(c.zip_code), 5) = ol.site_zip
+
     )
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY

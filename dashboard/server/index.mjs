@@ -801,13 +801,13 @@ all_valid AS (
   WHERE UPPER(TRIM(COALESCE(account_name, ''))) NOT IN ('', 'NA', 'N/A', 'UNKNOWN', 'NONE', 'NULL')
 ),
 deduped AS (
-  -- Keep highest-scoring record per company+zip
+  -- Keep highest-scoring record per normalized company name
   SELECT * EXCEPT(rn)
   FROM (
     SELECT
       av.*,
       ROW_NUMBER() OVER (
-        PARTITION BY UPPER(COALESCE(av.account_name, '')), COALESCE(av.site_zip, '')
+        PARTITION BY REGEXP_REPLACE(UPPER(COALESCE(av.account_name, '')), r'[^A-Z0-9]', '')
         ORDER BY
           IF(av.qualifies_incident_3yr, 0, 1) ASC,
           av.final_score DESC
@@ -847,10 +847,10 @@ LIMIT 600
   const rawJson = await executeSql(fastSql);
   const rows = JSON.parse(rawJson);
   const records = rows.map(toLeadRecord);
-  // Safety-net dedup: keep first occurrence of each (normalized_name + city + zip) pair
+  // Safety-net dedup: one record per normalized company name (SQL dedup handles location priority).
   const seen = new Set();
   return records.filter((r) => {
-    const key = `${(r.company || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()}|${r.city || ''}|${r.zip || ''}`;
+    const key = (r.company || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
