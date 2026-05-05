@@ -6,6 +6,7 @@ import { toLeadRecord } from "./transforms.mjs";
 
 const PROJECT_ID = process.env.PROJECT_ID || "cold-lead-pipeline-dashboard";
 const DATASET = process.env.BQ_DATASET || "osha_raw";
+const ENABLE_LEAD_TABLE_COUNT = String(process.env.ENABLE_LEAD_TABLE_COUNT || "0") === "1";
 
 const BAY_AREA_ANCHOR_LAT = 37.6776;
 const BAY_AREA_ANCHOR_LON = -122.1297;
@@ -161,10 +162,10 @@ export async function fetchLeadsCached({ force = false } = {}) {
   if (!force && leadsCache.generatedAt && now < leadsCache.cacheUntil) {
     return { leads: leadsCache.leads, generatedAt: leadsCache.generatedAt, totalAvailable: leadsCache.totalAvailable, cacheHit: true };
   }
-  const [leads, totalAvailable] = await Promise.all([
-    fetchLiveLeads(),
-    fetchLeadTableCount().catch(() => null),
-  ]);
+  const leads = await fetchLiveLeads();
+  const totalAvailable = ENABLE_LEAD_TABLE_COUNT
+    ? await fetchLeadTableCount().catch(() => null)
+    : null;
   const generatedAt = new Date().toISOString();
   leadsCache = { leads, generatedAt, totalAvailable, cacheUntil: Date.now() + CACHE_TTL_MS };
   return { leads, generatedAt, totalAvailable, cacheHit: false };

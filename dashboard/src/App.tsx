@@ -574,6 +574,10 @@ function getActionTone(action: LeadRecord["action"]) {
   }
 }
 
+function cleanDisplayText(value?: string) {
+  return String(value || "").replace(/�/g, "'").trim();
+}
+
 function StatCard({
   label,
   value,
@@ -618,11 +622,11 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
   };
 
   return (
-    <Card
+    <Box
       sx={{
         borderTop: `3px solid ${tierStyle.text}`,
-        display: "flex",
-        flexDirection: "column",
+        borderRadius: 2,
+        border: "1px solid rgba(15, 23, 42, 0.1)",
         overflow: "hidden",
       }}
     >
@@ -681,11 +685,11 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
         </Stack>
       </Box>
 
-      <CardContent sx={{ pt: 1.25, pb: 1.25, px: pad }}>
+      <Box sx={{ pt: 1.25, pb: 1.25, px: pad }}>
         {/* ── PITCH ── */}
         {lead.pitchRecommendation && (
           <Typography variant="body2" sx={{ fontStyle: "italic", color: "text.secondary", mb: 1 }}>
-            {lead.pitchRecommendation}
+            {cleanDisplayText(lead.pitchRecommendation)}
           </Typography>
         )}
 
@@ -826,8 +830,8 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
             : "No OSHA incident/violation date on record"}
           {lead.faceHeadInjuryCount > 0 ? ` • ${lead.faceHeadInjuryCount} face/head` : ""}
         </Typography>
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 }
 
@@ -861,10 +865,9 @@ function OutreachCard({
   }, [lead.id, lead.outreachStatus, lead.outreachNotes]);
 
   return (
-    <Card sx={{ mt: 1.25 }}>
-      <CardContent sx={{ pt: 2 }}>
-        <Typography variant="subtitle2">Outreach Tracking</Typography>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ mt: 1.25 }}>
+    <Box sx={{ px: 1.25, pt: 0.5, pb: 0.5 }}>
+      <Typography variant="subtitle2">Outreach Tracking</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 1 }}>
           <FormControl size="small" sx={{ minWidth: 180 }}>
             <InputLabel>Status</InputLabel>
             <Select
@@ -902,12 +905,11 @@ function OutreachCard({
           >
             {saving ? "Saving..." : "Save"}
           </Button>
-        </Stack>
-        <Typography sx={{ mt: 1 }} color="text.secondary" variant="caption">
-          Last update: {lead.outreachUpdatedAt ? formatPullTime(lead.outreachUpdatedAt) : "N/A"}
-        </Typography>
-      </CardContent>
-    </Card>
+      </Stack>
+      <Typography sx={{ mt: 1 }} color="text.secondary" variant="caption">
+        Last update: {lead.outreachUpdatedAt ? formatPullTime(lead.outreachUpdatedAt) : "N/A"}
+      </Typography>
+    </Box>
   );
 }
 
@@ -1439,8 +1441,9 @@ export default function App() {
   }, [contactReadyLeads, monitorLeads, settings.showOnlyContactReady]);
   const researchNeeded = ppeOpportunityLeads; // legacy compat
   const sourceSignalRows = React.useMemo(
-    () =>
-      visibleLeads.flatMap((lead) =>
+    () => {
+      if (activeView !== "source-signals") return [];
+      return visibleLeads.flatMap((lead) =>
         lead.matchedSources.map((source) => ({
           id: `${lead.id}-${source}`,
           company: lead.company,
@@ -1455,8 +1458,9 @@ export default function App() {
           score: lead.overallSalesScore,
           note: lead.reasonToContact,
         })),
-      ),
-    [visibleLeads],
+      );
+    },
+    [activeView, visibleLeads],
   );
 
   const recentIncidents = React.useMemo(
@@ -1515,26 +1519,27 @@ export default function App() {
   const renderLeadWorkflowCard = (lead: LeadRecord) => {
     const accountEntry = namedAccounts[normalizeCompanyKey(lead.company)];
     return (
-      <Stack
-        spacing={1}
+      <Card
         sx={{
           width: "100%",
-          borderRadius: 3,
-          border: "1px solid rgba(15, 23, 42, 0.1)",
-          p: 1.25,
+          borderRadius: 2.5,
+          border: "1px solid rgba(15, 23, 42, 0.12)",
           bgcolor: alpha("#ffffff", 0.74),
           backdropFilter: "blur(4px)",
+          overflow: "hidden",
         }}
       >
-        <MemoLeadCard lead={lead} compact={settings.compactCards} />
+        <Box sx={{ p: 1 }}>
+          <MemoLeadCard lead={lead} compact={settings.compactCards} />
+        </Box>
         {accountEntry ? (
-          <Box>
+          <Box sx={{ px: 1.25, pb: 0.5 }}>
             <AccountStatusBadge status={accountEntry.status} label={ACCOUNT_STATUS_LABELS[accountEntry.status]} />
           </Box>
         ) : null}
-        <Divider sx={{ borderColor: "rgba(15, 23, 42, 0.08)" }} />
+        <Divider sx={{ borderColor: "rgba(15, 23, 42, 0.1)" }} />
         <MemoOutreachCard lead={lead} onSave={onSaveLeadOutcome} />
-        <Box>
+        <Box sx={{ px: 1.25, pb: 1.25 }}>
           <Button
             size="small"
             variant="outlined"
@@ -1544,12 +1549,12 @@ export default function App() {
               setBadLeadReason("wrong_industry");
               setBadLeadDialogLead(lead);
             }}
-            sx={{ alignSelf: "flex-start", opacity: 0.86, "&:hover": { opacity: 1 } }}
+            sx={{ alignSelf: "flex-start", opacity: 0.9, "&:hover": { opacity: 1 } }}
           >
             Not a Fit
           </Button>
         </Box>
-      </Stack>
+      </Card>
     );
   };
 
@@ -2111,9 +2116,7 @@ export default function App() {
               </Grid>
               {leadQueueVisibleRows.map((lead) => (
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
-                  <Stack spacing={1.25} sx={{ width: "100%" }}>
-                    {renderLeadWorkflowCard(lead)}
-                  </Stack>
+                  {renderLeadWorkflowCard(lead)}
                 </Grid>
               ))}
               {leadQueueLeads.length > pageSize ? (
@@ -2138,9 +2141,7 @@ export default function App() {
             <Grid container spacing={2.5}>
               {hotEyeVisibleRows.map((lead) => (
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
-                  <Stack spacing={1.25} sx={{ width: "100%" }}>
-                    {renderLeadWorkflowCard(lead)}
-                  </Stack>
+                  {renderLeadWorkflowCard(lead)}
                 </Grid>
               ))}
               {hotEyeLeads.length > pageSize ? (
@@ -2165,9 +2166,7 @@ export default function App() {
             <Grid container spacing={2.5}>
               {ppeVisibleRows.map((lead) => (
                 <Grid key={lead.id} size={{ xs: 12, lg: 6 }}>
-                  <Stack spacing={1.25} sx={{ width: "100%" }}>
-                    {renderLeadWorkflowCard(lead)}
-                  </Stack>
+                  {renderLeadWorkflowCard(lead)}
                 </Grid>
               ))}
               {ppeOpportunityLeads.length > pageSize ? (
