@@ -799,6 +799,12 @@ all_valid AS (
     CASE WHEN qualifies_incident_3yr THEN 'incident' ELSE 'profile_fit' END AS lead_type
   FROM classified
   WHERE UPPER(TRIM(COALESCE(account_name, ''))) NOT IN ('', 'NA', 'N/A', 'UNKNOWN', 'NONE', 'NULL')
+    -- Suppress obvious consumer/retail storefronts before rendering dashboard leads.
+    AND NOT REGEXP_CONTAINS(UPPER(COALESCE(account_name, '')), r'\\b(LLC\\s+DBA|DBA\\s+|SALON|BARBERSHOP|BARBER|NAIL|SPA|BOUTIQUE|RESTAURANT|CAFE|COFFEE|PIZZA|TAQUERIA|DELI|BAKERY|DONUT|YOGA|FITNESS|GYM|SMOKE\\s*SHOP|VAPE|CONVENIENCE|GROCERY|MARKET|LIQUOR|PHARMACY|OPTICAL\\s+SHOP|EYEWEAR\\s+SHOP|PET\\s+GROOMING|AUTO\\s+DETAIL|CAR\\s+WASH)\\b')
+    AND NOT REGEXP_CONTAINS(UPPER(COALESCE(industry_segment, '')), r'\\b(RETAIL|FOOD\\s+SERVICE|RESTAURANT|ACCOMMODATION|PERSONAL\\s+CARE|BEAUTY|SALON|BARBER|CONSUMER|HOSPITALITY)\\b')
+    AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '44')
+    AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '45')
+    AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '72')
 ),
 deduped AS (
   -- Keep highest-scoring record per normalized company name

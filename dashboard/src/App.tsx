@@ -634,7 +634,16 @@ function LeadCard({ lead, compact }: { lead: LeadRecord; compact: boolean }) {
       <Box sx={{ bgcolor: tierStyle.bg, px: pad, pt: pad, pb: 1.25 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h6" sx={{ fontSize: "1.1rem", fontWeight: 700, lineHeight: 1.2 }} noWrap>
+            <Typography
+              variant="h6"
+              sx={{
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                lineHeight: 1.2,
+                whiteSpace: "normal",
+                overflowWrap: "anywhere",
+              }}
+            >
               {lead.company}
             </Typography>
             <Typography color="text.secondary" variant="caption" sx={{ display: "block", lineHeight: 1.3 }}>
