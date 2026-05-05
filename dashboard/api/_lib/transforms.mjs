@@ -86,7 +86,7 @@ export function industryFromNaics(naicsCode) {
     "562910": "Remediation Services",
   };
 
-  if (exact[code]) return `${exact[code]} (NAICS ${code})`;
+  if (exact[code]) return exact[code];
 
   const prefixRules = [
     ["3254", "Pharmaceutical and Medicine Manufacturing"],
@@ -112,15 +112,67 @@ export function industryFromNaics(naicsCode) {
   ];
 
   for (const [prefix, label] of prefixRules) {
-    if (code.startsWith(prefix)) return `${label} (NAICS ${code})`;
+    if (code.startsWith(prefix)) return label;
   }
   return "";
 }
 
 export function resolveIndustryLabel(row) {
+  const strategicBucket = strategicIndustryBucket(row);
+  if (strategicBucket) return strategicBucket;
+
   const naicsLabel = industryFromNaics(row["naics_code"]);
   if (naicsLabel) return naicsLabel;
   return String(row["industry_segment"] || "").trim() || "Unknown Industry";
+}
+
+function strategicIndustryBucket(row) {
+  const code = normalizeNaicsCode(row["naics_code"]);
+  const segment = String(row["industry_segment"] || "").toUpperCase();
+
+  if (
+    code.startsWith("3254")
+    || code.startsWith("5417")
+    || code.startsWith("541380")
+    || /PHARMA|PHARMACEUT|BIOTECH|LABORATOR|LAB\b|RESEARCH|R&D|LIFE\s*SCIENCE/.test(segment)
+  ) {
+    return "Pharmaceuticals, Labs, and Research";
+  }
+
+  if (
+    code.startsWith("3364")
+    || /AEROSPACE|DEFENSE|DEFENCE|AIRCRAFT|AVIATION|SPACE\b/.test(segment)
+  ) {
+    return "Aerospace and Defense";
+  }
+
+  if (
+    code.startsWith("22")
+    || code.startsWith("211")
+    || code.startsWith("213")
+    || code.startsWith("32411")
+    || /ENERGY|UTILITY|UTILITIES|POWER|ELECTRIC|GAS\b|WATER|RENEWABLE|OIL\b/.test(segment)
+  ) {
+    return "Energy and Utilities";
+  }
+
+  if (
+    code.startsWith("23")
+    || /CONSTRUCTION|CONTRACTOR|BUILDING\b|ROOFING|PLUMBING|HVAC|ELECTRICAL\s+CONTRACT/.test(segment)
+  ) {
+    return "Construction";
+  }
+
+  if (
+    code.startsWith("31")
+    || code.startsWith("32")
+    || code.startsWith("33")
+    || /MANUFACTUR|PRODUCTION|FABRICATION|ASSEMBLY/.test(segment)
+  ) {
+    return "Manufacturing and Production";
+  }
+
+  return "";
 }
 
 export function normalizeCaliforniaRegion(row) {

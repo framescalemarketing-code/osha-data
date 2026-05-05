@@ -361,7 +361,7 @@ function industryFromNaics(naicsCode) {
   };
 
   if (exact[code]) {
-    return `${exact[code]} (NAICS ${code})`;
+    return exact[code];
   }
 
   const prefixRules = [
@@ -389,7 +389,7 @@ function industryFromNaics(naicsCode) {
 
   for (const [prefix, label] of prefixRules) {
     if (code.startsWith(prefix)) {
-      return `${label} (NAICS ${code})`;
+      return label;
     }
   }
 
@@ -397,11 +397,65 @@ function industryFromNaics(naicsCode) {
 }
 
 function resolveIndustryLabel(row) {
+  const strategicBucket = strategicIndustryBucket(row);
+  if (strategicBucket) {
+    return strategicBucket;
+  }
+
   const naicsLabel = industryFromNaics(row["naics_code"]);
   if (naicsLabel) {
     return naicsLabel;
   }
   return String(row["industry_segment"] || "").trim() || "Unknown Industry";
+}
+
+function strategicIndustryBucket(row) {
+  const code = normalizeNaicsCode(row["naics_code"]);
+  const segment = String(row["industry_segment"] || "").toUpperCase();
+
+  if (
+    code.startsWith("3254")
+    || code.startsWith("5417")
+    || code.startsWith("541380")
+    || /PHARMA|PHARMACEUT|BIOTECH|LABORATOR|LAB\b|RESEARCH|R&D|LIFE\s*SCIENCE/.test(segment)
+  ) {
+    return "Pharmaceuticals, Labs, and Research";
+  }
+
+  if (
+    code.startsWith("3364")
+    || /AEROSPACE|DEFENSE|DEFENCE|AIRCRAFT|AVIATION|SPACE\b/.test(segment)
+  ) {
+    return "Aerospace and Defense";
+  }
+
+  if (
+    code.startsWith("22")
+    || code.startsWith("211")
+    || code.startsWith("213")
+    || code.startsWith("32411")
+    || /ENERGY|UTILITY|UTILITIES|POWER|ELECTRIC|GAS\b|WATER|RENEWABLE|OIL\b/.test(segment)
+  ) {
+    return "Energy and Utilities";
+  }
+
+  if (
+    code.startsWith("23")
+    || /CONSTRUCTION|CONTRACTOR|BUILDING\b|ROOFING|PLUMBING|HVAC|ELECTRICAL\s+CONTRACT/.test(segment)
+  ) {
+    return "Construction";
+  }
+
+  if (
+    code.startsWith("31")
+    || code.startsWith("32")
+    || code.startsWith("33")
+    || /MANUFACTUR|PRODUCTION|FABRICATION|ASSEMBLY/.test(segment)
+  ) {
+    return "Manufacturing and Production";
+  }
+
+  return "";
 }
 
 function normalizeCaliforniaRegion(row) {
@@ -805,6 +859,24 @@ all_valid AS (
     AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '44')
     AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '45')
     AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '72')
+    -- Keep only target B2B sectors: pharma/labs/research, aerospace/defense,
+    -- energy/utilities, construction, and manufacturing/production.
+    AND (
+      REGEXP_CONTAINS(
+        UPPER(COALESCE(industry_segment, '')),
+        r'\\b(PHARMA|PHARMACEUT|BIOTECH|LIFE\\s*SCIENCE|LAB|LABORATOR|RESEARCH|AEROSPACE|DEFENSE|DEFENCE|AVIATION|SPACE|ENERGY|UTILITY|UTILITIES|POWER|ELECTRIC|OIL|GAS|CONSTRUCTION|CONTRACTOR|MANUFACTUR|PRODUCTION|FABRICATION|ASSEMBLY)\\b'
+      )
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '21')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '22')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '23')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '31')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '32')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '33')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '3254')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '3364')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '5417')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '541380')
+    )
 ),
 deduped AS (
   -- Keep highest-scoring record per normalized company name

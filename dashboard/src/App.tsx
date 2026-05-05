@@ -547,6 +547,55 @@ function getDistanceLabelForLead(lead: LeadRecord): string {
   return "";
 }
 
+function getTierRankForLead(lead: LeadRecord): number {
+  switch (lead.leadTier) {
+    case "P0 Hot Eye":
+      return 0;
+    case "P1 Eye Violation":
+      return 1;
+    case "P2 PPE Opportunity":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function getPreferredDistanceMiles(lead: LeadRecord): number {
+  const bay = lead.bayAreaDistanceMiles;
+  const sanDiego = lead.distanceFromMiramarMiles;
+  const geo = lead.geoMatchSource || "none";
+  const region = String(lead.region || "").toLowerCase();
+
+  if (geo === "bay_radius") return bay ?? Number.POSITIVE_INFINITY;
+  if (geo === "san_diego_area") return sanDiego ?? Number.POSITIVE_INFINITY;
+
+  if (geo === "bay_radius|san_diego_area") {
+    if (region.includes("north") || region.includes("bay")) return bay ?? sanDiego ?? Number.POSITIVE_INFINITY;
+    if (region.includes("south") || region.includes("diego")) return sanDiego ?? bay ?? Number.POSITIVE_INFINITY;
+    return Math.min(bay ?? Number.POSITIVE_INFINITY, sanDiego ?? Number.POSITIVE_INFINITY);
+  }
+
+  if (lead.isWithinBayArea50Mi) return bay ?? Number.POSITIVE_INFINITY;
+  if (lead.isSanDiegoArea) return sanDiego ?? Number.POSITIVE_INFINITY;
+  return Math.min(bay ?? Number.POSITIVE_INFINITY, sanDiego ?? Number.POSITIVE_INFINITY);
+}
+
+function compareLeadsForQueue(a: LeadRecord, b: LeadRecord): number {
+  const incidentDiff = Number(Boolean(b.qualifiesIncident3Year)) - Number(Boolean(a.qualifiesIncident3Year));
+  if (incidentDiff !== 0) return incidentDiff;
+
+  const tierDiff = getTierRankForLead(a) - getTierRankForLead(b);
+  if (tierDiff !== 0) return tierDiff;
+
+  const scoreDiff = (b.finalScore || 0) - (a.finalScore || 0);
+  if (scoreDiff !== 0) return scoreDiff;
+
+  const distanceDiff = getPreferredDistanceMiles(a) - getPreferredDistanceMiles(b);
+  if (distanceDiff !== 0) return distanceDiff;
+
+  return a.company.localeCompare(b.company);
+}
+
 function getPriorityTone(priority: LeadRecord["priority"]) {
   switch (priority) {
     case "P0 Ideal":
@@ -1375,6 +1424,11 @@ export default function App() {
     ],
   );
 
+  const rankedVisibleLeads = React.useMemo(
+    () => [...visibleLeads].sort(compareLeadsForQueue),
+    [visibleLeads],
+  );
+
   const contactReadyLoadedCount = React.useMemo(
     () => leadData.filter((lead) => CONTACT_READY_ACTIONS.includes(lead.action)).length,
     [leadData],
@@ -1421,23 +1475,23 @@ export default function App() {
 
   const hotEyeLeads = React.useMemo(
     () =>
-      visibleLeads.filter(
+      rankedVisibleLeads.filter(
         (lead) => lead.leadTier === "P0 Hot Eye" || lead.leadTier === "P1 Eye Violation",
       ),
-    [visibleLeads],
+    [rankedVisibleLeads],
   );
   const hotAccounts = hotEyeLeads; // legacy compat for overview section
   const monitorLeads = React.useMemo(
-    () => visibleLeads.filter((lead) => lead.leadTier === "P3 Industry Fit"),
-    [visibleLeads],
+    () => rankedVisibleLeads.filter((lead) => lead.leadTier === "P3 Industry Fit"),
+    [rankedVisibleLeads],
   );
   const contactReadyLeads = React.useMemo(
-    () => visibleLeads.filter((lead) => CONTACT_READY_ACTIONS.includes(lead.action)),
-    [visibleLeads],
+    () => rankedVisibleLeads.filter((lead) => CONTACT_READY_ACTIONS.includes(lead.action)),
+    [rankedVisibleLeads],
   );
   const ppeOpportunityLeads = React.useMemo(
-    () => visibleLeads.filter((lead) => lead.leadTier === "P2 PPE Opportunity"),
-    [visibleLeads],
+    () => rankedVisibleLeads.filter((lead) => lead.leadTier === "P2 PPE Opportunity"),
+    [rankedVisibleLeads],
   );
   const leadQueueLeads = React.useMemo(() => {
     if (settings.showOnlyContactReady) {

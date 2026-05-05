@@ -117,6 +117,24 @@ all_valid AS (
     AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '44')
     AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '45')
     AND NOT STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '72')
+    -- Keep only target B2B sectors: pharma/labs/research, aerospace/defense,
+    -- energy/utilities, construction, and manufacturing/production.
+    AND (
+      REGEXP_CONTAINS(
+        UPPER(COALESCE(industry_segment, '')),
+        r'\\b(PHARMA|PHARMACEUT|BIOTECH|LIFE\\s*SCIENCE|LAB|LABORATOR|RESEARCH|AEROSPACE|DEFENSE|DEFENCE|AVIATION|SPACE|ENERGY|UTILITY|UTILITIES|POWER|ELECTRIC|OIL|GAS|CONSTRUCTION|CONTRACTOR|MANUFACTUR|PRODUCTION|FABRICATION|ASSEMBLY)\\b'
+      )
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '21')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '22')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '23')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '31')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '32')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '33')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '3254')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '3364')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '5417')
+      OR STARTS_WITH(REGEXP_REPLACE(COALESCE(CAST(naics_code AS STRING), ''), r'\\D', ''), '541380')
+    )
 ),
 deduped AS (
   SELECT * EXCEPT(rn)
