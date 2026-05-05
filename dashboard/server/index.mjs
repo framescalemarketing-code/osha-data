@@ -22,27 +22,6 @@ const BAY_AREA_RADIUS_MILES = 50;
 const SAN_DIEGO_ANCHOR_LAT = 32.8730;
 const SAN_DIEGO_ANCHOR_LON = -117.1604;
 const SAN_DIEGO_RADIUS_MILES = 50;
-const SAN_DIEGO_BORDER_CITIES = [
-  "SAN DIEGO",
-  "CHULA VISTA",
-  "NATIONAL CITY",
-  "LA MESA",
-  "EL CAJON",
-  "SANTEE",
-  "LEMON GROVE",
-  "IMPERIAL BEACH",
-  "CORONADO",
-  "POWAY",
-  "ESCONDIDO",
-  "VISTA",
-  "OCEANSIDE",
-  "CARLSBAD",
-  "SAN MARCOS",
-  "ENCINITAS",
-  "DEL MAR",
-  "SOLANA BEACH",
-];
-
 const app = express();
 app.use(express.json());
 
@@ -852,94 +831,6 @@ ORDER BY
   final_score DESC,
   IF(has_open_violations, 1, 0) DESC
 LIMIT 600
-`;
-
-  const legacySql = `
-WITH actionable AS (
-  SELECT
-    \`Latest Inspection ID\`,
-    \`Account Name\`,
-    \`Region\`,
-    \`Site City\`,
-    \`Industry Segment\`,
-    \`Ownership Type\`,
-    \`Overall Sales Score\`,
-    \`Eyewear Evidence Score\`,
-    \`Overall Sales Priority\`,
-    \`Eyewear Need Tier\`,
-    \`Should Look At Now\`,
-    \`Matched Sources\`,
-    \`Reason To Contact\`,
-    \`Why Now\`,
-    \`Recent Inspection Context\`,
-    \`Has Open Violations\`,
-    \`Severe Incident Signal\`,
-    \`Direct Prescription Citation Count\`,
-    \`Prescription Signal Count\`,
-    \`Fit Selection Citation Count\`,
-    \`Eye Face Citation Count\`,
-    \`General PPE Citation Count\`,
-    \`Estimated Employee Band\`
-  FROM \`${cfg.projectId}.${cfg.dataset}.eyewear_opportunity_actionable_current\`
-),
-followup AS (
-  SELECT
-    \`Latest Inspection ID\`,
-    \`Account Name\`,
-    \`Region\`,
-    \`Case Open Date\`,
-    \`Latest Case Close Date\`,
-    \`Last Violation Event Date\`,
-    \`Last Accident Date\`,
-    \`Has Complaint Signal\`,
-    \`Standards Cited\`,
-    \`Company Latest Load Timestamp\`
-  FROM \`${cfg.projectId}.${cfg.dataset}.sales_followup_all_current\`
-),
-keyed_actionable AS (
-  SELECT DISTINCT
-    \`Latest Inspection ID\`,
-    \`Account Name\`,
-    \`Region\`
-  FROM actionable
-),
-followup_latest AS (
-  SELECT * EXCEPT(rn)
-  FROM (
-    SELECT
-      f.*,
-      ROW_NUMBER() OVER (
-        PARTITION BY f.\`Latest Inspection ID\`, f.\`Region\`, f.\`Account Name\`
-        ORDER BY f.\`Company Latest Load Timestamp\` DESC NULLS LAST
-      ) AS rn
-    FROM followup f
-    INNER JOIN keyed_actionable ka
-      ON ka.\`Latest Inspection ID\` = f.\`Latest Inspection ID\`
-     AND ka.\`Region\` = f.\`Region\`
-     AND ka.\`Account Name\` = f.\`Account Name\`
-  )
-  WHERE rn = 1
-)
-SELECT
-  *
-FROM (
-  SELECT
-    a.*,
-    f.\`Case Open Date\`,
-    f.\`Latest Case Close Date\`,
-    f.\`Last Violation Event Date\`,
-    f.\`Last Accident Date\`,
-    f.\`Has Complaint Signal\`,
-    f.\`Standards Cited\`,
-    f.\`Company Latest Load Timestamp\`
-  FROM actionable a
-  LEFT JOIN followup_latest f
-    ON a.\`Latest Inspection ID\` = f.\`Latest Inspection ID\`
-   AND a.\`Region\` = f.\`Region\`
-   AND a.\`Account Name\` = f.\`Account Name\`
-)
-ORDER BY \`Overall Sales Score\` DESC
-LIMIT 500
 `;
   const runtimeEnv = await getRuntimeEnv();
 
