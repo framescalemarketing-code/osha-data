@@ -115,6 +115,7 @@ const INITIAL_RENDER_LIMIT = 60;
 const RENDER_STEP = 60;
 const BAD_LEADS_STORAGE_KEY = "osha_dashboard_bad_leads_v1";
 const NAICS_RULES_STORAGE_KEY = "osha_naics_rules_v1";
+const OUTCOMES_STORAGE_KEY = "osha_dashboard_outcomes_v1";
 
 type BadLeadReason =
   | "wrong_industry"
@@ -191,6 +192,46 @@ function saveNaicsRules(rules: NaicsRule[]): void {
   try {
     localStorage.setItem(NAICS_RULES_STORAGE_KEY, JSON.stringify(rules));
   } catch {}
+}
+
+type OutcomeEntry = {
+  outreachStatus: OutreachStatus;
+  outreachNotes: string;
+  outreachUpdatedAt: string;
+  accountStatus: "New" | "In Review" | "Contacted";
+};
+
+function loadOutcomes(): Record<string, OutcomeEntry> {
+  try {
+    const raw = localStorage.getItem(OUTCOMES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveOutcomes(map: Record<string, OutcomeEntry>): void {
+  try {
+    localStorage.setItem(OUTCOMES_STORAGE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+/** Merge locally-stored outcomes onto an API lead list so saves survive cold starts. */
+function applyLocalOutcomes(leads: LeadRecord[], outcomes: Record<string, OutcomeEntry>): LeadRecord[] {
+  if (Object.keys(outcomes).length === 0) return leads;
+  return leads.map((lead) => {
+    const local = outcomes[lead.id];
+    if (!local) return lead;
+    return {
+      ...lead,
+      outreachStatus: local.outreachStatus,
+      outreachNotes: local.outreachNotes,
+      outreachUpdatedAt: local.outreachUpdatedAt,
+      accountStatus: local.accountStatus,
+    };
+  });
 }
 
 function matchesSearch(lead: LeadRecord, query: string) {
@@ -739,7 +780,9 @@ export default function App() {
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Failed to load leads");
       }
-      setLiveLeads(payload.leads || []);
+      // Merge locally-persisted outcomes so saves survive Vercel cold starts
+      const withLocal = applyLocalOutcomes(payload.leads || [], loadOutcomes());
+      setLiveLeads(withLocal);
       setTotalAvailableLeads(Number.isFinite(Number(payload.totalAvailable)) ? Number(payload.totalAvailable) : null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load leads";
@@ -855,35 +898,33 @@ export default function App() {
   };
 
   const onSaveLeadOutcome = async (leadId: string, outreachStatus: OutreachStatus, outreachNotes: string) => {
-    try {
-      const response = await fetch("/api/lead-outcomes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ leadId, outreachStatus, outreachNotes }),
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Failed to save outcome");
-      }
-      setLiveLeads((current) =>
-        current.map((lead) =>
-          lead.id === leadId
-            ? {
-                ...lead,
-                outreachStatus,
-                outreachNotes,
-                outreachUpdatedAt: payload.outcome?.outreachUpdatedAt || new Date().toISOString(),
-                accountStatus: payload.outcome?.accountStatus || lead.accountStatus,
-              }
-            : lead,
-        ),
-      );
-    } catch (error) {
-      setLeadLoadError(error instanceof Error ? error.message : "Failed to save outreach update");
-    } finally {
-    }
+    const accountStatus: OutcomeEntry["accountStatus"] =
+      outreachStatus === "won" ? "Contacted"
+      : outreachStatus === "lost" || outreachStatus === "connected" ? "In Review"
+      : outreachStatus === "attempted" ? "Contacted"
+      : "New";
+    const outreachUpdatedAt = new Date().toISOString();
+
+    // Persist locally first — survives Vercel cold starts and network failures
+    const outcomes = loadOutcomes();
+    outcomes[leadId] = { outreachStatus, outreachNotes, outreachUpdatedAt, accountStatus };
+    saveOutcomes(outcomes);
+
+    // Optimistically update UI
+    setLiveLeads((current) =>
+      current.map((lead) =>
+        lead.id === leadId
+          ? { ...lead, outreachStatus, outreachNotes, outreachUpdatedAt, accountStatus }
+          : lead,
+      ),
+    );
+
+    // Fire-and-forget to API (best-effort server-side logging)
+    fetch("/api/lead-outcomes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leadId, outreachStatus, outreachNotes }),
+    }).catch(() => {});
   };
 
   const onConfirmBadLead = (lead: LeadRecord, reason: BadLeadReason) => {
