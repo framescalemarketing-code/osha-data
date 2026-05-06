@@ -1118,7 +1118,7 @@ export default function App() {
     setLoadingLeads(true);
     setLeadLoadError(null);
     try {
-      const response = await fetch(force ? "/api/leads?force=1" : "/api/leads");
+      const response = await fetch(force ? "/api/leads?force=1&includeSecondary=1" : "/api/leads?includeSecondary=1");
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Failed to load leads");

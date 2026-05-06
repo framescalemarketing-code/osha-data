@@ -425,7 +425,8 @@ async function appendHistory(entry) {
 app.get("/api/leads", async (req, res) => {
   try {
     const force = String(req.query.force || "").trim() === "1";
-    const includeSecondary = String(req.query.includeSecondary || "").trim() === "1";
+    const includeSecondaryParam = String(req.query.includeSecondary || "").trim();
+    const includeSecondary = includeSecondaryParam === "" ? true : includeSecondaryParam === "1";
     const leadPayload = await fetchLiveLeadsCached({ force, includeSecondary });
     const outcomes = await readOutcomes();
     const mergedLeads = leadPayload.leads.map((lead) => {
